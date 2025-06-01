@@ -4,3 +4,9 @@
 .DS_Store
 *.egg-info
 logs/
+
+# Coverage files
+.coverage
+htmlcov/
+coverage/
+coverage.xml

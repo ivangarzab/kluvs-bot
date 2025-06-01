@@ -4,3 +4,4 @@ supabase
 pytz
 requests
 openai
+coverage

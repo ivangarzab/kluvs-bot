@@ -71,12 +71,14 @@ class BookClubBot(commands.Bot):
         from cogs.session_commands import setup_session_commands
         from cogs.fun_commands import setup_fun_commands
         from cogs.utility_commands import setup_utility_commands
+        from cogs.admin_commands import setup_admin_commands
         
         # Setup commands directly on the command tree
         setup_general_commands(self)
         setup_session_commands(self)
         setup_fun_commands(self)
         setup_utility_commands(self)
+        setup_admin_commands(self)
         
         print("All commands loaded")
 

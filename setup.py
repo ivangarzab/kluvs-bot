@@ -10,7 +10,16 @@ setup(
     install_requires=[
         "discord.py",
         "python-dotenv",
-        "supabase"
+        "supabase",
+        "pytz",
+        "requests",
+        "openai",
+        "coverage"
     ],
     python_requires=">=3.8",
+    entry_points={
+        'console_scripts': [
+            'quill-bot=main:main',
+        ],
+    },
 )
