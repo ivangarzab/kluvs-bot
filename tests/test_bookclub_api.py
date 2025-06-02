@@ -16,21 +16,123 @@ class TestBookClubAPI(unittest.TestCase):
             base_url="http://test-url.supabase.co",
             api_key="test-key"
         )
+        self.test_guild_id = "1039326367428395038"
         
         # Verify the headers are set correctly
         self.assertEqual(self.api.headers["Content-Type"], "application/json")
         self.assertEqual(self.api.headers["Authorization"], "Bearer test-key")
         self.assertEqual(self.api.functions_url, "http://test-url.supabase.co/functions/v1")
 
-    # Club endpoint tests
+    # Server endpoint tests
+    @patch('requests.post')
+    def test_register_server(self, mock_post):
+        """Test register_server method."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Server registered successfully",
+            "server": {"id": self.test_guild_id, "name": "Test Server"}
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+        
+        # Call the method
+        result = self.api.register_server(self.test_guild_id, "Test Server")
+        
+        # Assertions
+        self.assertTrue(result["success"])
+        self.assertEqual(result["server"]["name"], "Test Server")
+        mock_post.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/server",
+            headers=self.api.headers,
+            json={"id": self.test_guild_id, "name": "Test Server"}
+        )
+
+    @patch('requests.get')
+    def test_get_server(self, mock_get):
+        """Test get_server method."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": self.test_guild_id,
+            "name": "Test Server",
+            "created_at": "2025-01-01T00:00:00Z",
+            "clubs": [{"id": "club-1", "name": "Test Club"}]
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        
+        # Call the method
+        result = self.api.get_server(self.test_guild_id)
+        
+        # Assertions
+        self.assertEqual(result["name"], "Test Server")
+        self.assertEqual(len(result["clubs"]), 1)
+        mock_get.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/server",
+            headers=self.api.headers,
+            params={"id": self.test_guild_id}
+        )
+
+    @patch('requests.put')
+    def test_update_server(self, mock_put):
+        """Test update_server method."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Server updated successfully",
+            "server": {"id": self.test_guild_id, "name": "Updated Server"}
+        }
+        mock_response.raise_for_status = Mock()
+        mock_put.return_value = mock_response
+        
+        # Call the method
+        result = self.api.update_server(self.test_guild_id, "Updated Server")
+        
+        # Assertions
+        self.assertTrue(result["success"])
+        self.assertEqual(result["server"]["name"], "Updated Server")
+        mock_put.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/server",
+            headers=self.api.headers,
+            json={"id": self.test_guild_id, "name": "Updated Server"}
+        )
+
+    @patch('requests.delete')
+    def test_delete_server(self, mock_delete):
+        """Test delete_server method."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Server and all associated data deleted successfully"
+        }
+        mock_response.raise_for_status = Mock()
+        mock_delete.return_value = mock_response
+        
+        # Call the method
+        result = self.api.delete_server(self.test_guild_id)
+        
+        # Assertions
+        self.assertTrue(result["success"])
+        mock_delete.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/server",
+            headers=self.api.headers,
+            params={"id": self.test_guild_id}
+        )
+
+    # Club endpoint tests (updated for multi-server)
     @patch('requests.get')
     def test_get_club(self, mock_get):
-        """Test get_club method."""
+        """Test get_club method with guild_id."""
         # Set up mock response
         mock_response = Mock()
         mock_response.json.return_value = {
             "id": "club-1", 
             "name": "Test Club",
+            "server_id": self.test_guild_id,
             "members": [{"id": 1, "name": "Test Member"}],
             "active_session": None,
             "past_sessions": []
@@ -39,26 +141,27 @@ class TestBookClubAPI(unittest.TestCase):
         mock_get.return_value = mock_response
         
         # Call the method
-        result = self.api.get_club("club-1")
+        result = self.api.get_club("club-1", self.test_guild_id)
         
         # Assertions
         self.assertEqual(result["name"], "Test Club")
+        self.assertEqual(result["server_id"], self.test_guild_id)
         self.assertEqual(len(result["members"]), 1)
         mock_get.assert_called_once_with(
             "http://test-url.supabase.co/functions/v1/club",
             headers=self.api.headers,
-            params={"id": "club-1"}
+            params={"id": "club-1", "server_id": self.test_guild_id}
         )
 
     @patch('requests.post')
     def test_create_club(self, mock_post):
-        """Test create_club method."""
+        """Test create_club method with guild_id."""
         # Set up mock response
         mock_response = Mock()
         mock_response.json.return_value = {
             "success": True,
             "message": "Club created successfully",
-            "club": {"id": "new-club", "name": "New Club"}
+            "club": {"id": "new-club", "name": "New Club", "server_id": self.test_guild_id}
         }
         mock_response.raise_for_status = Mock()
         mock_post.return_value = mock_response
@@ -70,33 +173,37 @@ class TestBookClubAPI(unittest.TestCase):
         }
         
         # Call the method
-        result = self.api.create_club(club_data)
+        result = self.api.create_club(club_data, self.test_guild_id)
         
         # Assertions
         self.assertTrue(result["success"])
         self.assertEqual(result["club"]["name"], "New Club")
+        self.assertEqual(result["club"]["server_id"], self.test_guild_id)
+        
+        # Verify the server_id was added to the data
+        expected_data = {**club_data, "server_id": self.test_guild_id}
         mock_post.assert_called_once_with(
             "http://test-url.supabase.co/functions/v1/club",
             headers=self.api.headers,
-            json=club_data
+            json=expected_data
         )
 
     @patch('requests.put')
     def test_update_club(self, mock_put):
-        """Test update_club method."""
+        """Test update_club method with guild_id."""
         # Set up mock response
         mock_response = Mock()
         mock_response.json.return_value = {
             "success": True,
             "message": "Club updated successfully",
-            "club": {"id": "club-1", "name": "Updated Club Name"}
+            "club": {"id": "club-1", "name": "Updated Club Name", "server_id": self.test_guild_id}
         }
         mock_response.raise_for_status = Mock()
         mock_put.return_value = mock_response
         
-        # Call the method with a dictionary instead of just a name string
+        # Call the method
         update_data = {"name": "Updated Club Name"}
-        result = self.api.update_club("club-1", update_data)
+        result = self.api.update_club("club-1", update_data, self.test_guild_id)
         
         # Assertions
         self.assertTrue(result["success"])
@@ -104,12 +211,12 @@ class TestBookClubAPI(unittest.TestCase):
         mock_put.assert_called_once_with(
             "http://test-url.supabase.co/functions/v1/club",
             headers=self.api.headers,
-            json={"id": "club-1", **update_data}
+            json={"id": "club-1", "server_id": self.test_guild_id, **update_data}
         )
 
     @patch('requests.delete')
     def test_delete_club(self, mock_delete):
-        """Test delete_club method."""
+        """Test delete_club method with guild_id."""
         # Set up mock response
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -120,17 +227,17 @@ class TestBookClubAPI(unittest.TestCase):
         mock_delete.return_value = mock_response
         
         # Call the method
-        result = self.api.delete_club("club-1")
+        result = self.api.delete_club("club-1", self.test_guild_id)
         
         # Assertions
         self.assertTrue(result["success"])
         mock_delete.assert_called_once_with(
             "http://test-url.supabase.co/functions/v1/club",
             headers=self.api.headers,
-            params={"id": "club-1"}
+            params={"id": "club-1", "server_id": self.test_guild_id}
         )
 
-    # Member endpoint tests
+    # Member endpoint tests (unchanged - members aren't server-specific)
     @patch('requests.get')
     def test_get_member(self, mock_get):
         """Test get_member method."""
@@ -249,7 +356,7 @@ class TestBookClubAPI(unittest.TestCase):
             params={"id": 1}
         )
 
-    # Session endpoint tests
+    # Session endpoint tests (unchanged - sessions inherit server context from clubs)
     @patch('requests.get')
     def test_get_session(self, mock_get):
         """Test get_session method."""
@@ -391,7 +498,7 @@ class TestBookClubAPI(unittest.TestCase):
         
         # Call the method and expect a ResourceNotFoundError
         with self.assertRaises(ResourceNotFoundError):
-            self.api.get_club("non-existent-club")
+            self.api.get_club("non-existent-club", self.test_guild_id)
 
     @patch('requests.post')
     def test_validation_error(self, mock_post):
@@ -407,7 +514,7 @@ class TestBookClubAPI(unittest.TestCase):
         
         # Call the method and expect a ValidationError
         with self.assertRaises(ValidationError):
-            self.api.create_club({"invalid": "data"})
+            self.api.create_club({"invalid": "data"}, self.test_guild_id)
 
     @patch('requests.get')
     def test_authentication_error(self, mock_get):
@@ -423,7 +530,7 @@ class TestBookClubAPI(unittest.TestCase):
         
         # Call the method and expect an AuthenticationError
         with self.assertRaises(AuthenticationError):
-            self.api.get_club("club-1")
+            self.api.get_club("club-1", self.test_guild_id)
 
     @patch('requests.get')
     def test_connection_error(self, mock_get):
@@ -433,7 +540,7 @@ class TestBookClubAPI(unittest.TestCase):
         
         # Call the method and expect an APIError
         with self.assertRaises(APIError) as context:
-            self.api.get_club("club-1")
+            self.api.get_club("club-1", self.test_guild_id)
         
         # Verify the error message contains helpful information
         self.assertIn("Connection error", str(context.exception))
@@ -453,7 +560,7 @@ class TestBookClubAPI(unittest.TestCase):
         
         # Call the method and expect an APIError
         with self.assertRaises(APIError) as context:
-            self.api.get_club("club-1")
+            self.api.get_club("club-1", self.test_guild_id)
         
         # Verify the error message contains the status code
         self.assertIn("500", str(context.exception))
