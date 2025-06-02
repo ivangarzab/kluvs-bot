@@ -213,7 +213,9 @@ class BookClubAPI:
         try:
             response = requests.get(url, headers=self.headers, params=params)
             response.raise_for_status()
-            return response.json()
+            json = response.json()
+            print(f"[DEBUG] Fetched club data: {json}")  # Debug log
+            return json
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "club", club_id)
     
