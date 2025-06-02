@@ -27,6 +27,7 @@ def setup_session_commands(bot):
         
         try:
             # Find the club associated with this Discord channel
+            print(f"[DEBUG] Attempting to fetch club data for channel {channel_id} in guild {guild_id}")
             club_data = bot.api.find_club_in_channel(channel_id, guild_id)
             
             if not club_data:
