@@ -5,6 +5,7 @@ import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
+from api.bookclub_api import ResourceNotFoundError
 
 def setup_session_commands(bot):
     """
@@ -25,32 +26,25 @@ def setup_session_commands(bot):
         guild_id = str(interaction.guild_id)
         channel_id = str(interaction.channel_id)
         
-        try:
-            # Find the club associated with this Discord channel
-            print(f"[DEBUG] Attempting to fetch club data for channel {channel_id} in guild {guild_id}")
-            club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-            
-            if not club_data:
-                await interaction.followup.send(
-                    "❌ No book club found in this channel. "
-                    "Make sure you're using this command in a registered book club channel."
-                )
-                return None, None
-            
-            # Check if there's an active session
-            if not club_data.get('active_session'):
-                await interaction.followup.send(
-                    f"There is no active reading session for **{club_data['name']}** right now."
-                )
-                return None, None
-                
-            return club_data, club_data['active_session']
-            
-        except Exception as e:
+        # Find the club associated with this Discord channel
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        
+        if not club_data:
+            print(f"[ERROR] No club found in channel {channel_id} for guild {guild_id}")
+            # Raise an exception that the bot's error handler will catch
+            raise ResourceNotFoundError(f"No book club found in channel {channel_id}")
+        
+        # Check if there's an active session
+        if not club_data.get('active_session'):
+            print(f"[INFO] No active session for club {club_data['name']} in guild {guild_id}")
+            # This isn't really an error, so we'll handle it directly with a friendly message
             await interaction.followup.send(
-                f"❌ Error retrieving club data: {str(e)}"
+                f"There is no active reading session for **{club_data['name']}** right now."
             )
             return None, None
+            
+        print(f"[INFO] Found active session for club {club_data['name']} in channel {channel_id}")
+        return club_data, club_data['active_session']
 
     @bot.tree.command(name="book", description="Show current book details")
     async def book_command(interaction: discord.Interaction):
@@ -63,9 +57,9 @@ def setup_session_commands(bot):
         
         await interaction.response.defer()
         
-        # Get active session data (guild_id is handled inside _get_active_session)
+        # Get active session data - let exceptions bubble up to bot's error handler
         club_data, session = await _get_active_session(interaction)
-        if not session:
+        if not session:  # This handles the "no active session" case gracefully
             return
             
         book = session['book']
@@ -87,7 +81,7 @@ def setup_session_commands(bot):
             embed.add_field(name="Edition", value=book['edition'], inline=True)
             
         await interaction.followup.send(embed=embed)
-        print(f"Sent book command response. [Server: {club_data['server_id']}, Club: {club_data['id']}]")
+        print(f"[SUCCESS] Sent book command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="duedate", description="Show the session's due date")
     async def duedate_command(interaction: discord.Interaction):
@@ -112,7 +106,7 @@ def setup_session_commands(bot):
             color_key="warning"
         )
         await interaction.followup.send(embed=embed)
-        print(f"Sent duedate command response. [Server: {club_data['server_id']}, Club: {club_data['id']}]")
+        print(f"[SUCCESS] Sent duedate command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="session", description="Show current session details")
     async def session_command(interaction: discord.Interaction):
@@ -164,7 +158,7 @@ def setup_session_commands(bot):
             footer="Keep reading! 📖"
         )
         await interaction.followup.send(embed=embed)
-        print(f"Sent session command response. [Server: {club_data['server_id']}, Club: {club_data['id']}]")
+        print(f"[SUCCESS] Sent session command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="discussions", description="Show the session's discussion details")
     async def discussions_command(interaction: discord.Interaction):
@@ -207,7 +201,7 @@ def setup_session_commands(bot):
             footer="Don't stop reading! 📖"
         )
         await interaction.followup.send(embed=embed)
-        print(f"Sent discussions command response. [Server: {club_data['server_id']}, Club: {club_data['id']}]")
+        print(f"[SUCCESS] Sent discussions command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
     
     @bot.tree.command(name="book_summary", description="Let me provide a summary of the active book")
     async def booksummary_command(interaction: discord.Interaction):
@@ -236,4 +230,4 @@ def setup_session_commands(bot):
             color_key="info"
         )
         await interaction.followup.send(embed=embed)
-        print(f"Sent book summary command response. [Server: {club_data['server_id']}, Club: {club_data['id']}]")
+        print(f"[SUCCESS] Sent book summary command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
