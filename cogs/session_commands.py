@@ -23,19 +23,33 @@ def setup_session_commands(bot):
             return None, None
         
         guild_id = str(interaction.guild_id)
+        channel_id = str(interaction.channel_id)
         
-        # Get the club ID from bot config (or use a default if not available)
-        club_id = getattr(bot.config, 'DEFAULT_CLUB_ID', 'club-1')
-
-        # Get club data from API with guild context
-        club_data = bot.api.get_club(club_id, guild_id)
-        
-        # Check if there's an active session
-        if not club_data.get('active_session'):
-            await interaction.followup.send("There is no active reading session right now.")
-            return None, None
+        try:
+            # Find the club associated with this Discord channel
+            club_data = bot.api.find_club_in_channel(channel_id, guild_id)
             
-        return club_data, club_data['active_session']
+            if not club_data:
+                await interaction.followup.send(
+                    "❌ No book club found in this channel. "
+                    "Make sure you're using this command in a registered book club channel."
+                )
+                return None, None
+            
+            # Check if there's an active session
+            if not club_data.get('active_session'):
+                await interaction.followup.send(
+                    f"There is no active reading session for **{club_data['name']}** right now."
+                )
+                return None, None
+                
+            return club_data, club_data['active_session']
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Error retrieving club data: {str(e)}"
+            )
+            return None, None
 
     @bot.tree.command(name="book", description="Show current book details")
     async def book_command(interaction: discord.Interaction):
