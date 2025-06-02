@@ -16,13 +16,6 @@ def setup_session_commands(bot):
     async def _get_active_session(interaction):
         """
         Helper function to get active session data
-        
-        Args:
-            interaction: The Discord interaction
-            
-        Returns:
-            Tuple of (club_data, session_data) if successful
-            If no active session, sends a message and returns None, None
         """
         # Ensure we're in a guild
         if not interaction.guild_id:
@@ -31,11 +24,24 @@ def setup_session_commands(bot):
         
         guild_id = str(interaction.guild_id)
         
-        # Get the club ID from bot config (or use a default if not available)
-        club_id = getattr(bot.config, 'DEFAULT_CLUB_ID', 'club-1')
-        
-        # Get club data from API with guild context
-        club_data = bot.api.get_club(club_id, guild_id)
+        # Get server data to find clubs
+        try:
+            server_data = bot.api.get_server(guild_id)
+            clubs = server_data.get('clubs', [])
+            
+            if not clubs:
+                await interaction.followup.send("No book clubs found in this server. Ask an admin to create one!")
+                return None, None
+            
+            # Use the first club (for now)
+            club_id = clubs[0]['id']
+            
+            # Get full club data
+            club_data = bot.api.get_club(club_id, guild_id)
+            
+        except Exception as e:
+            await interaction.followup.send(f"Error finding book club: {str(e)}")
+            return None, None
         
         # Check if there's an active session
         if not club_data.get('active_session'):
