@@ -48,7 +48,7 @@ class BookClubBot(commands.Bot):
         
     def load_session_details(self):
         """Load session details from the database"""
-        self.club = self.api.get_club(self.config.DEFAULT_CLUB_ID)
+        # self.club = self.api.get_club(self.config.DEFAULT_CLUB_ID)
 
     async def setup_hook(self):
         """Setup hook called when bot is being prepared to connect"""
@@ -63,7 +63,8 @@ class BookClubBot(commands.Bot):
         await self.wait_until_ready()
         for guild in self.guilds:
             nickname = guild.me.nick or guild.me.name
-            print(f"[DEBUG] ~~~~~~~~~~~~ Instance initialized as '{nickname}' ~~~~~~~~~~~~\nwith metadata: \n{json.dumps(self.club, separators=(',', ':'))}")
+            # print(f"[DEBUG] ~~~~~~~~~~~~ Instance initialized as '{nickname}' ~~~~~~~~~~~~\nwith metadata: \n{json.dumps(self.club, separators=(',', ':'))}")
+            print(f"[DEBUG] ~~~~~~~~~~~~ Instance initialized as '{nickname}' ~~~~~~~~~~~~")
 
     def load_cogs(self):
         """Load all command cogs"""

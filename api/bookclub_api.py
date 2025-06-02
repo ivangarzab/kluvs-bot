@@ -80,24 +80,135 @@ class BookClubAPI:
         else:
             raise APIError(f"Request failed: {str(error)}") from error
     
+    # Server Methods
+    def register_server(self, guild_id: str, server_name: str) -> Dict:
+        """
+        Register a Discord server with the API.
+        
+        Args:
+            guild_id: Discord guild ID
+            server_name: Name of the Discord server
+            
+        Returns:
+            Dict containing success status and message
+            
+        Raises:
+            ValidationError: If the server data is invalid
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/server"
+        data = {
+            "id": guild_id,
+            "name": server_name
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "server")
+    
+    def get_server(self, guild_id: str) -> Dict:
+        """
+        Get server details including all clubs.
+        
+        Args:
+            guild_id: Discord guild ID
+            
+        Returns:
+            Dict containing server details and clubs
+            
+        Raises:
+            ResourceNotFoundError: If the server doesn't exist
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/server"
+        params = {"id": guild_id}
+        
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "server", guild_id)
+    
+    def update_server(self, guild_id: str, server_name: str) -> Dict:
+        """
+        Update server information.
+        
+        Args:
+            guild_id: Discord guild ID
+            server_name: Updated name of the Discord server
+            
+        Returns:
+            Dict containing success status and message
+            
+        Raises:
+            ResourceNotFoundError: If the server doesn't exist
+            ValidationError: If the server data is invalid
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/server"
+        data = {
+            "id": guild_id,
+            "name": server_name
+        }
+        
+        try:
+            response = requests.put(url, headers=self.headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "server", guild_id)
+    
+    def delete_server(self, guild_id: str) -> Dict:
+        """
+        Delete a server and all associated data.
+        
+        Args:
+            guild_id: Discord guild ID
+            
+        Returns:
+            Dict containing success status and message
+            
+        Raises:
+            ResourceNotFoundError: If the server doesn't exist
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/server"
+        params = {"id": guild_id}
+        
+        try:
+            response = requests.delete(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "server", guild_id)
+    
     # Club Methods
-    def get_club(self, club_id: str) -> Dict:
+    def get_club(self, club_id: str, guild_id: str) -> Dict:
         """
         Get details for a specific club.
         
         Args:
             club_id: The ID of the club to retrieve
+            guild_id: Discord guild ID where the club exists
             
         Returns:
             Dict containing club details including members and active session
             
         Raises:
-            ResourceNotFoundError: If the club doesn't exist
+            ResourceNotFoundError: If the club doesn't exist in this server
             AuthenticationError: If there's an authentication issue
             APIError: For other API errors
         """
         url = f"{self.functions_url}/club"
-        params = {"id": club_id}
+        params = {"id": club_id, "server_id": guild_id}
         
         try:
             response = requests.get(url, headers=self.headers, params=params)
@@ -106,7 +217,7 @@ class BookClubAPI:
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "club", club_id)
     
-    def create_club(self, club_data: Dict) -> Dict:
+    def create_club(self, club_data: Dict, guild_id: str) -> Dict:
         """
         Create a new club with all its associated data.
         
@@ -128,6 +239,7 @@ class BookClubAPI:
                         "due_date": "2023-12-31"
                     }
                 }
+            guild_id: Discord guild ID where the club will be created
             
         Returns:
             Dict containing success status and message
@@ -139,63 +251,68 @@ class BookClubAPI:
         """
         url = f"{self.functions_url}/club"
         
+        # Add server_id to the club data
+        data = {**club_data, "server_id": guild_id}
+        
         try:
-            response = requests.post(url, headers=self.headers, json=club_data)
+            response = requests.post(url, headers=self.headers, json=data)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "club")
     
-    def update_club(self, club_id: str, data: Dict) -> Dict:
+    def update_club(self, club_id: str, update_data: Dict, guild_id: str) -> Dict:
         """
         Update a club.
         
         Args:
             club_id: The ID of the club to update
-            data: Dict containing fields to update (name, discord_channel, shame_list)
+            update_data: Dict containing fields to update (name, discord_channel, shame_list)
                 Example:
                 {
                     "name": "New Club Name",  # Optional
                     "discord_channel": 987654321098765432,  # Optional
                     "shame_list": [1, 2, 3]  # Optional - list of member IDs
                 }
+            guild_id: Discord guild ID where the club exists
             
         Returns:
             Dict containing success status and message
             
         Raises:
-            ResourceNotFoundError: If the club doesn't exist
+            ResourceNotFoundError: If the club doesn't exist in this server
             ValidationError: If the club data is invalid
             AuthenticationError: If there's an authentication issue
             APIError: For other API errors
         """
         url = f"{self.functions_url}/club"
-        update_data = {"id": club_id, **data}
+        data = {"id": club_id, "server_id": guild_id, **update_data}
         
         try:
-            response = requests.put(url, headers=self.headers, json=update_data)
+            response = requests.put(url, headers=self.headers, json=data)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "club", club_id)
     
-    def delete_club(self, club_id: str) -> Dict:
+    def delete_club(self, club_id: str, guild_id: str) -> Dict:
         """
         Delete a club and all associated data.
         
         Args:
             club_id: The ID of the club to delete
+            guild_id: Discord guild ID where the club exists
             
         Returns:
             Dict containing success status and message
             
         Raises:
-            ResourceNotFoundError: If the club doesn't exist
+            ResourceNotFoundError: If the club doesn't exist in this server
             AuthenticationError: If there's an authentication issue
             APIError: For other API errors
         """
         url = f"{self.functions_url}/club"
-        params = {"id": club_id}
+        params = {"id": club_id, "server_id": guild_id}
         
         try:
             response = requests.delete(url, headers=self.headers, params=params)
@@ -204,7 +321,7 @@ class BookClubAPI:
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "club", club_id)
     
-    # Member Methods
+    # Member Methods (unchanged - members aren't server-specific)
     def get_member(self, member_id: int) -> Dict:
         """
         Get details for a specific member.
@@ -320,7 +437,7 @@ class BookClubAPI:
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "member", str(member_id))
     
-    # Session Methods
+    # Session Methods (unchanged - sessions are tied to clubs, which are server-specific)
     def get_session(self, session_id: str) -> Dict:
         """
         Get details for a specific session.
@@ -473,9 +590,12 @@ if __name__ == "__main__":
         api_key=os.getenv("SUPABASE_KEY", "your-local-anon-key")
     )
     
+    # Example of context-aware usage
+    guild_id = "1327357845511082094"  # Would come from Discord interaction
+    
     try:
-        # Get club details
-        club = api.get_club("club-1")
+        # Get club details for specific server
+        club = api.get_club("club-1", guild_id)
         print(f"Club name: {club['name']}")
         print(f"Number of members: {len(club['members'])}")
     except ResourceNotFoundError as e:
