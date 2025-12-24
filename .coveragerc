@@ -7,6 +7,7 @@ omit =
     setup.py
     main.py
     bot.py
+    Makefile
 
 [report]
 precision = 2
