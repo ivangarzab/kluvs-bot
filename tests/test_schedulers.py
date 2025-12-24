@@ -1,192 +1,203 @@
 """
-Tests for task scheduling utilities
+Tests for scheduled tasks
 """
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock
-import asyncio
 from datetime import datetime
-import random
 import pytz
 
 from utils.schedulers import setup_scheduled_tasks
-from utils.constants import READING_REMINDERS
 
-class TestSchedulers(unittest.TestCase):
-    """Test cases for task schedulers"""
-    
+
+class TestSchedulers(unittest.IsolatedAsyncioTestCase):
+    """Test cases for scheduled tasks - PROPERLY ASYNC"""
+
     def setUp(self):
-        """Set up test fixtures"""
+        """Set up common test fixtures"""
         self.bot = MagicMock()
         self.bot.config = MagicMock()
-        self.bot.config.DEFAULT_CHANNEL = 12345
-        
+        self.bot.config.DEFAULT_CHANNEL = 123456
+        self.bot.get_channel = MagicMock()
+
+    @patch('utils.schedulers.tasks.loop')
+    async def test_reminder_at_5pm_pacific_triggers(self, mock_loop):
+        """Test that reminders trigger at 5PM Pacific with correct probability"""
+        # Create mock datetime for 5PM Pacific
+        sf_timezone = pytz.timezone('US/Pacific')
+        mock_time = datetime(2025, 1, 15, 17, 30, 0, tzinfo=sf_timezone)
+
         # Mock channel
-        self.mock_channel = MagicMock()
-        self.bot.get_channel.return_value = self.mock_channel
-        
-        # Store the task
-        self.reminder_task = None
-        
-        # Mock the tasks.loop decorator
-        def mock_loop(**kwargs):
+        mock_channel = AsyncMock()
+        mock_channel.send = AsyncMock()
+        self.bot.get_channel.return_value = mock_channel
+
+        # Capture the scheduled function
+        captured_func = None
+
+        def capture_loop(*args, **kwargs):
             def decorator(func):
-                # Store the original function
-                self.loop_func = func
-                
-                # Create a mock for the task
+                nonlocal captured_func
+                captured_func = func
                 mock_task = MagicMock()
-                
-                # Add a start method that calls the function once
-                async def start_method():
-                    await self.loop_func()
-                
-                mock_task.start = start_method
-                self.reminder_task = mock_task
-                
+                mock_task.start = MagicMock()
                 return mock_task
             return decorator
-        
-        # Apply the patch
-        self.loop_patcher = patch('discord.ext.tasks.loop', mock_loop)
-        self.mock_loop = self.loop_patcher.start()
-        
-    def tearDown(self):
-        """Clean up after tests"""
-        self.loop_patcher.stop()
-    
-    @patch('random.random')
-    @patch('utils.embeds.create_embed')
-    async def test_reminder_message_sent(self, mock_create_embed, mock_random):
-        """Test reminder message is sent at the right time with correct content"""
-        # Configure random to trigger sending (0.3 < 0.4)
-        mock_random.return_value = 0.3
-        
-        # Configure random choice for the reminder message
-        with patch('random.choice', return_value="Have you read today?"):
-            # Mock the embed
-            mock_embed = MagicMock()
-            mock_create_embed.return_value = mock_embed
-            
-            # Mock the time to be 5 PM Pacific
-            mock_now = datetime(2025, 3, 22, 17, 0, 0)
-            mock_now = pytz.timezone('US/Pacific').localize(mock_now)
-            
-            with patch('datetime.datetime') as mock_datetime:
-                # Configure now to return our fixed time
-                mock_datetime.now.return_value = mock_now
-                
-                # Configure timezone to work with our mock
-                mock_datetime.now.side_effect = lambda tz=None: mock_now
-                
-                # Setup and run the task
-                task = setup_scheduled_tasks(self.bot)
-                await self.reminder_task.start()
-                
-                # Verify channel was retrieved
-                self.bot.get_channel.assert_called_once_with(12345)
-                
-                # Verify embed was created with the right parameters
-                mock_create_embed.assert_called_once()
-                args, kwargs = mock_create_embed.call_args
-                self.assertEqual(kwargs['title'], "📚 Daily Reading Reminder")
-                self.assertEqual(kwargs['description'], "Have you read today?")
-                self.assertEqual(kwargs['color_key'], "purp")
-                
-                # Verify the message was sent
-                self.mock_channel.send.assert_called_once_with(embed=mock_embed)
-    
-    @patch('random.random')
-    async def test_reminder_message_not_sent_wrong_time(self, mock_random):
-        """Test reminder message is not sent at times other than 5 PM Pacific"""
-        # Configure random to trigger sending if time was right
-        mock_random.return_value = 0.3
-        
-        # Mock the time to be 3 PM Pacific (not 5 PM)
-        mock_now = datetime(2025, 3, 22, 15, 0, 0)
-        mock_now = pytz.timezone('US/Pacific').localize(mock_now)
-        
-        with patch('datetime.datetime') as mock_datetime:
-            # Configure now to return our fixed time
-            mock_datetime.now.return_value = mock_now
-            
-            # Configure timezone to work with our mock
-            mock_datetime.now.side_effect = lambda tz=None: mock_now
-            
-            # Setup and run the task
-            task = setup_scheduled_tasks(self.bot)
-            await self.reminder_task.start()
-            
-            # Verify channel was NOT retrieved (task shouldn't run)
-            self.bot.get_channel.assert_not_called()
-            
-            # Verify no message was sent
-            self.mock_channel.send.assert_not_called()
-    
-    @patch('random.random')
-    async def test_reminder_message_not_sent_random_check(self, mock_random):
-        """Test reminder message is not sent when random check fails"""
-        # Configure random to prevent sending (0.5 >= 0.4)
-        mock_random.return_value = 0.5
-        
-        # Mock the time to be 5 PM Pacific
-        mock_now = datetime(2025, 3, 22, 17, 0, 0)
-        mock_now = pytz.timezone('US/Pacific').localize(mock_now)
-        
-        with patch('datetime.datetime') as mock_datetime:
-            # Configure now to return our fixed time
-            mock_datetime.now.return_value = mock_now
-            
-            # Configure timezone to work with our mock
-            mock_datetime.now.side_effect = lambda tz=None: mock_now
-            
-            # Setup and run the task
-            task = setup_scheduled_tasks(self.bot)
-            await self.reminder_task.start()
-            
-            # Verify channel was NOT retrieved (random check failed)
-            self.bot.get_channel.assert_not_called()
-            
-            # Verify no message was sent
-            self.mock_channel.send.assert_not_called()
-    
-    @patch('random.random')
-    @patch('random.choice')
-    async def test_reminder_message_content(self, mock_choice, mock_random):
-        """Test the content of reminder messages"""
-        # Configure random to trigger sending
-        mock_random.return_value = 0.3
-        
-        # Test with each reminder message
-        for reminder in READING_REMINDERS:
-            # Configure the random choice
-            mock_choice.return_value = reminder
-            
-            # Reset the mocks
-            self.bot.get_channel.reset_mock()
-            self.mock_channel.send.reset_mock()
-            
-            # Mock the time to be 5 PM Pacific
-            mock_now = datetime(2025, 3, 22, 17, 0, 0)
-            mock_now = pytz.timezone('US/Pacific').localize(mock_now)
-            
-            with patch('datetime.datetime') as mock_datetime:
-                # Configure now to return our fixed time
-                mock_datetime.now.return_value = mock_now
-                
-                # Configure timezone to work with our mock
-                mock_datetime.now.side_effect = lambda tz=None: mock_now
-                
-                # Setup and run the task
-                task = setup_scheduled_tasks(self.bot)
-                await self.reminder_task.start()
-                
-                # Verify the message was sent
-                self.mock_channel.send.assert_called_once()
-                
-                # Verify the embed contains the right reminder
-                args, kwargs = self.mock_channel.send.call_args
-                embed = kwargs['embed']
-                self.assertEqual(embed.description, reminder)
+
+        mock_loop.side_effect = capture_loop
+
+        # Setup and capture the function
+        setup_scheduled_tasks(self.bot)
+        self.assertIsNotNone(captured_func)
+
+        # Test with correct time and probability
+        with patch('utils.schedulers.datetime') as mock_datetime:
+            mock_datetime.now.return_value = mock_time
+            with patch('random.random', return_value=0.3):  # 0.3 < 0.4, should send
+                with patch('random.choice', return_value="Keep reading!"):
+                    await captured_func()
+
+        # Verify message was sent
+        mock_channel.send.assert_called_once()
+        call_args = mock_channel.send.call_args
+        self.assertIn('embed', call_args.kwargs)
+
+    @patch('utils.schedulers.tasks.loop')
+    async def test_reminder_wrong_hour_no_send(self, mock_loop):
+        """Test that reminders DON'T trigger at wrong hours"""
+        # Create mock datetime for 3PM Pacific (not 5PM)
+        sf_timezone = pytz.timezone('US/Pacific')
+        mock_time = datetime(2025, 1, 15, 15, 0, 0, tzinfo=sf_timezone)
+
+        mock_channel = AsyncMock()
+        self.bot.get_channel.return_value = mock_channel
+
+        # Capture the scheduled function
+        captured_func = None
+
+        def capture_loop(*args, **kwargs):
+            def decorator(func):
+                nonlocal captured_func
+                captured_func = func
+                mock_task = MagicMock()
+                mock_task.start = MagicMock()
+                return mock_task
+            return decorator
+
+        mock_loop.side_effect = capture_loop
+        setup_scheduled_tasks(self.bot)
+
+        # Test with wrong time
+        with patch('utils.schedulers.datetime') as mock_datetime:
+            mock_datetime.now.return_value = mock_time
+            with patch('random.random', return_value=0.3):  # Would trigger if time was right
+                await captured_func()
+
+        # Verify NO message was sent
+        mock_channel.send.assert_not_called()
+
+    @patch('utils.schedulers.tasks.loop')
+    async def test_reminder_probability_check(self, mock_loop):
+        """Test that probability check works (40% threshold)"""
+        sf_timezone = pytz.timezone('US/Pacific')
+        mock_time = datetime(2025, 1, 15, 17, 0, 0, tzinfo=sf_timezone)
+
+        mock_channel = AsyncMock()
+        self.bot.get_channel.return_value = mock_channel
+
+        # Capture the scheduled function
+        captured_func = None
+
+        def capture_loop(*args, **kwargs):
+            def decorator(func):
+                nonlocal captured_func
+                captured_func = func
+                mock_task = MagicMock()
+                mock_task.start = MagicMock()
+                return mock_task
+            return decorator
+
+        mock_loop.side_effect = capture_loop
+        setup_scheduled_tasks(self.bot)
+
+        # Test with random value ABOVE threshold (should NOT send)
+        with patch('utils.schedulers.datetime') as mock_datetime:
+            mock_datetime.now.return_value = mock_time
+            with patch('random.random', return_value=0.5):  # 0.5 >= 0.4, should NOT send
+                await captured_func()
+
+        # Verify NO message was sent
+        mock_channel.send.assert_not_called()
+
+    @patch('utils.schedulers.tasks.loop')
+    async def test_reminder_no_channel(self, mock_loop):
+        """Test reminder handles missing channel gracefully"""
+        sf_timezone = pytz.timezone('US/Pacific')
+        mock_time = datetime(2025, 1, 15, 17, 0, 0, tzinfo=sf_timezone)
+
+        # Return None for channel
+        self.bot.get_channel.return_value = None
+
+        # Capture the scheduled function
+        captured_func = None
+
+        def capture_loop(*args, **kwargs):
+            def decorator(func):
+                nonlocal captured_func
+                captured_func = func
+                mock_task = MagicMock()
+                mock_task.start = MagicMock()
+                return mock_task
+            return decorator
+
+        mock_loop.side_effect = capture_loop
+        setup_scheduled_tasks(self.bot)
+
+        # Should not crash even with no channel
+        with patch('utils.schedulers.datetime') as mock_datetime:
+            mock_datetime.now.return_value = mock_time
+            with patch('random.random', return_value=0.3):
+                await captured_func()
+
+        # No exception should be raised
+
+    @patch('utils.schedulers.tasks.loop')
+    def test_setup_scheduled_tasks_returns_task(self, mock_loop):
+        """Test that setup returns the scheduled task"""
+        mock_task = MagicMock()
+        mock_task.start = MagicMock()
+
+        def mock_loop_decorator(*args, **kwargs):
+            def decorator(func):
+                return mock_task
+            return decorator
+
+        mock_loop.side_effect = mock_loop_decorator
+
+        result = setup_scheduled_tasks(self.bot)
+
+        # Verify task was returned
+        self.assertEqual(result, mock_task)
+
+    @patch('utils.schedulers.tasks.loop')
+    def test_loop_configured_correctly(self, mock_loop):
+        """Test that the task loop is configured for 1 hour intervals"""
+        mock_task = MagicMock()
+
+        def mock_loop_decorator(*args, **kwargs):
+            # Verify hours=1 was passed
+            self.assertEqual(kwargs.get('hours'), 1)
+
+            def decorator(func):
+                return mock_task
+            return decorator
+
+        mock_loop.side_effect = mock_loop_decorator
+
+        setup_scheduled_tasks(self.bot)
+
+        # Verify loop was called with correct parameters
+        mock_loop.assert_called_once_with(hours=1)
+
 
 if __name__ == '__main__':
     unittest.main()

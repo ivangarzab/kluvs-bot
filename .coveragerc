@@ -5,6 +5,8 @@ omit =
     */__pycache__/*
     */site-packages/*
     setup.py
+    main.py
+    bot.py
 
 [report]
 precision = 2

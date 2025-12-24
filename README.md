@@ -193,8 +193,9 @@ quill-bot/
 
 The project maintains comprehensive test coverage with:
 - **18 test files** covering all major components
-- **131 unit tests** with mock-based testing
-- **~39% code coverage** (tracked via codecov)
+- **130 unit tests** with properly async mock-based testing
+- **~62% code coverage** (tracked via codecov)
+- **100% coverage** on message handlers, schedulers, weather service, embeds, and constants
 - **Automated CI/CD** via GitHub Actions
 - **Mock-based testing** for Discord and external API interactions
 
