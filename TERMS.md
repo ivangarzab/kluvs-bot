@@ -1,8 +1,8 @@
-## **Terms of Use for Quill the Librarian**
+## **Terms of Use for Kluvs Discord bot**
 
 ### **1. Introduction**
 
-**Quill the Librarian** (the "Bot") is a Discord bot designed to serve as a companion of book club. 
+**Kluvs Discord bot** (the "Bot") is a Discord bot designed to serve as a companion of book club. 
 
 By using the Bot, you agree to these Terms of Use ("Terms").
 

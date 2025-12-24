@@ -1,10 +1,10 @@
 # CLAUDE.md - AI Assistant Context Guide
 
-This document provides comprehensive context about the Quill the Librarian Discord bot for AI assistants working on this codebase.
+This document provides comprehensive context about the Kluvs Discord bot for AI assistants working on this codebase.
 
 ## Project Overview
 
-**Project Name:** Quill the Librarian
+**Project Name:** Kluvs Discord bot
 **Type:** Discord Bot for Book Clubs
 **Language:** Python 3.9+
 **Architecture:** Modular command-based bot with external API integration

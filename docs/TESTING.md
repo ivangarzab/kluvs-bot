@@ -1,6 +1,6 @@
 # Testing Strategy & Guide
 
-This document explains how testing works in the Quill the Librarian Discord bot project, including our testing framework, strategy, and how to run tests.
+This document explains how testing works in the Kluvs Discord bot project, including our testing framework, strategy, and how to run tests.
 
 ## Table of Contents
 - [Testing Framework](#testing-framework)

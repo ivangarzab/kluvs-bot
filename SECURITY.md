@@ -1,8 +1,8 @@
-## **Privacy Policy for Quill the Librarian**
+## **Privacy Policy for Kluvs Discord bot**
 
 ### **1. Introduction**
 
-Quill the Librarian (the "Bot") is a Discord bot designed to serve as a companion to book club. This Privacy Policy outlines how we collect, use, and protect your personal information when you interact with the Bot.
+Kluvs Discord bot (the "Bot") is a Discord bot designed to serve as a companion to book club. This Privacy Policy outlines how we collect, use, and protect your personal information when you interact with the Bot.
 
 ### **2. Information We Collect**
 
