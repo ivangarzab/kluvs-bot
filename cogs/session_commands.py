@@ -5,6 +5,7 @@ import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
+from api.bookclub_api import ResourceNotFoundError
 
 def setup_session_commands(bot):
     """
@@ -16,34 +17,49 @@ def setup_session_commands(bot):
     async def _get_active_session(interaction):
         """
         Helper function to get active session data
-        
-        Args:
-            interaction: The Discord interaction
-            
-        Returns:
-            Tuple of (club_data, session_data) if successful
-            If no active session, sends a message and returns None, None
         """
-        # Get the club ID from bot config (or use a default if not available)
-        club_id = getattr(bot.config, 'DEFAULT_CLUB_ID', 'club-1')
+        # Ensure we're in a guild
+        if not interaction.guild_id:
+            await interaction.followup.send("❌ This command can only be used in a Discord server, not in DMs.")
+            return None, None
         
-        # Get club data from API
-        club_data = bot.api.get_club(club_id)
+        guild_id = str(interaction.guild_id)
+        channel_id = str(interaction.channel_id)
+        
+        # Find the club associated with this Discord channel
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        
+        if not club_data:
+            print(f"[ERROR] No club found in channel {channel_id} for guild {guild_id}")
+            # Raise an exception that the bot's error handler will catch
+            raise ResourceNotFoundError(f"No book club found in channel {channel_id}")
         
         # Check if there's an active session
         if not club_data.get('active_session'):
-            await interaction.followup.send("There is no active reading session right now.")
+            print(f"[INFO] No active session for club {club_data['name']} in guild {guild_id}")
+            # This isn't really an error, so we'll handle it directly with a friendly message
+            await interaction.followup.send(
+                f"There is no active reading session for **{club_data['name']}** right now."
+            )
             return None, None
             
+        print(f"[INFO] Found active session for club {club_data['name']} in channel {channel_id}")
         return club_data, club_data['active_session']
 
     @bot.tree.command(name="book", description="Show current book details")
     async def book_command(interaction: discord.Interaction):
-        await interaction.response.defer()  # Defer the response while we fetch data
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a Discord server, not in DMs.", 
+                ephemeral=True
+            )
+            return
         
-        # Get active session data
+        await interaction.response.defer()
+        
+        # Get active session data - let exceptions bubble up to bot's error handler
         club_data, session = await _get_active_session(interaction)
-        if not session:
+        if not session:  # This handles the "no active session" case gracefully
             return
             
         book = session['book']
@@ -65,10 +81,16 @@ def setup_session_commands(bot):
             embed.add_field(name="Edition", value=book['edition'], inline=True)
             
         await interaction.followup.send(embed=embed)
-        print("Sent book command response.")
+        print(f"[SUCCESS] Sent book command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="duedate", description="Show the session's due date")
     async def duedate_command(interaction: discord.Interaction):
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a Discord server, not in DMs.", 
+                ephemeral=True
+            )
+            return
         await interaction.response.defer()
         
         # Get active session data
@@ -84,10 +106,16 @@ def setup_session_commands(bot):
             color_key="warning"
         )
         await interaction.followup.send(embed=embed)
-        print("Sent duedate command response.")
+        print(f"[SUCCESS] Sent duedate command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="session", description="Show current session details")
     async def session_command(interaction: discord.Interaction):
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a Discord server, not in DMs.", 
+                ephemeral=True
+            )
+            return
         await interaction.response.defer()
         
         # Get active session data
@@ -130,10 +158,16 @@ def setup_session_commands(bot):
             footer="Keep reading! 📖"
         )
         await interaction.followup.send(embed=embed)
-        print("Sent session command response.")
+        print(f"[SUCCESS] Sent session command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="discussions", description="Show the session's discussion details")
     async def discussions_command(interaction: discord.Interaction):
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a Discord server, not in DMs.", 
+                ephemeral=True
+            )
+            return
         await interaction.response.defer()
         
         # Get active session data
@@ -167,11 +201,17 @@ def setup_session_commands(bot):
             footer="Don't stop reading! 📖"
         )
         await interaction.followup.send(embed=embed)
-        print("Sent discussions command response.")
+        print(f"[SUCCESS] Sent discussions command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
     
     @bot.tree.command(name="book_summary", description="Let me provide a summary of the active book")
     async def booksummary_command(interaction: discord.Interaction):
         """Ask OpenAI for a summary of the active book."""
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a Discord server, not in DMs.", 
+                ephemeral=True
+            )
+            return
         await interaction.response.defer()
         
         # Get active session data
@@ -190,4 +230,4 @@ def setup_session_commands(bot):
             color_key="info"
         )
         await interaction.followup.send(embed=embed)
-        print("Sent book summary command response.")
+        print(f"[SUCCESS] Sent book summary command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")

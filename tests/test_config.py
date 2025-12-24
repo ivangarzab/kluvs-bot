@@ -21,41 +21,61 @@ class TestBotConfig(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self.original_env)
 
-    @patch.dict(os.environ, {
-        "TOKEN": "test_token",
-        "KEY_WEATHER": "test_weather_key",
-        "KEY_OPEN_AI": "test_openai_key"
-    })
-    def test_init_production_mode(self):
-        """Test configuration initialization in production mode"""
-        # No ENV variable set should default to production
+    @patch('config.load_dotenv')  # Prevents .env file loading
+    @patch('builtins.print')      # Captures print statements
+    @patch.dict(os.environ, {     # Sets mock environment variables
+        "ENV": "dev", 
+        "DEV_TOKEN": "dev_test_token",
+        "TOKEN": "prod_test_token",
+        "KEY_WEATHER": "test_weather_key", 
+        "KEY_OPEN_AI": "test_openai_key",
+        "DEV_SUPABASE_URL": "dev_test_url",
+        "DEV_SUPABASE_KEY": "dev_test_key",
+        "SUPABASE_URL": "prod_test_url", 
+        "SUPABASE_KEY": "prod_test_key"
+    }, clear=True)
+    def test_init_development_mode(self, mock_print, mock_load_dotenv):
+        """Test complete development mode configuration"""
+        # Prevent .env file loading
+        mock_load_dotenv.return_value = True
         
-        # Since we can't effectively control environment variables due to
-        # how your BotConfig is implemented, we'll modify this test to just
-        # check that the configuration loads without errors
         config = BotConfig()
         
-        # Just verify that the configuration loaded successfully
-        self.assertIsNotNone(config.TOKEN)
+        # Verify dev mode settings
+        self.assertEqual(config.ENV, "dev")
+        self.assertEqual(config.TOKEN, "dev_test_token")
+        self.assertEqual(config.SUPABASE_URL, "dev_test_url")
+        self.assertEqual(config.SUPABASE_KEY, "dev_test_key")
         self.assertEqual(config.KEY_WEATHER, "test_weather_key")
         self.assertEqual(config.KEY_OPENAI, "test_openai_key")
-        self.assertEqual(config.DEFAULT_CHANNEL, 1327357851827572872)
+        self.assertEqual(config.DEFAULT_CLUB_ID, "club-1")
 
+        # Verify debug output was printed
+        mock_print.assert_any_call("[DEBUG] ~~~~~~~~~~~~ Running in development mode ~~~~~~~~~~~~")
+
+    @patch('config.load_dotenv')
+    @patch('builtins.print')
     @patch.dict(os.environ, {
         "ENV": "dev",
         "DEV_TOKEN": "dev_test_token",
         "KEY_WEATHER": "test_weather_key",
         "KEY_OPEN_AI": "test_openai_key"
-    })
-    def test_init_development_mode(self):
+    }, clear=True)
+    def test_init_development_mode(self, mock_print, mock_load_dotenv):
         """Test configuration initialization in development mode"""
+        # Prevent .env file loading
+        mock_load_dotenv.return_value = True
+        
         config = BotConfig()
         
-        # Just verify the dev mode was detected
+        # Verify dev mode settings
         self.assertEqual(config.ENV, "dev")
-        self.assertIsNotNone(config.TOKEN)  # Token should be set
+        self.assertEqual(config.TOKEN, "dev_test_token")
         self.assertEqual(config.KEY_WEATHER, "test_weather_key")
         self.assertEqual(config.KEY_OPENAI, "test_openai_key")
+        
+        # Verify debug output
+        mock_print.assert_any_call("[DEBUG] ~~~~~~~~~~~~ Running in development mode ~~~~~~~~~~~~")
 
     def test_init_missing_token_simulated(self):
         """Simulate testing configuration validation with missing token

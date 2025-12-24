@@ -37,18 +37,11 @@ class BookClubBot(commands.Bot):
         self.api = BookClubAPI(self.config.SUPABASE_URL, self.config.SUPABASE_KEY)
         self.openai_service = OpenAIService(self.config.KEY_OPENAI)
         
-        # Load club data
-        self.load_session_details()
-        
         # Register cogs
         self.load_cogs()
         
         # Setup message handlers
         setup_message_handlers(self)
-        
-    def load_session_details(self):
-        """Load session details from the database"""
-        self.club = self.api.get_club(self.config.DEFAULT_CLUB_ID)
 
     async def setup_hook(self):
         """Setup hook called when bot is being prepared to connect"""
@@ -63,7 +56,7 @@ class BookClubBot(commands.Bot):
         await self.wait_until_ready()
         for guild in self.guilds:
             nickname = guild.me.nick or guild.me.name
-            print(f"[DEBUG] ~~~~~~~~~~~~ Instance initialized as '{nickname}' ~~~~~~~~~~~~\nwith metadata: \n{json.dumps(self.club, separators=(',', ':'))}")
+            print(f"[DEBUG] ~~~~~~~~~~~~ Instance initialized as '{nickname}' ~~~~~~~~~~~~")
 
     def load_cogs(self):
         """Load all command cogs"""
