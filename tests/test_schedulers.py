@@ -52,7 +52,7 @@ class TestSchedulers(unittest.IsolatedAsyncioTestCase):
         # Test with correct time and probability
         with patch('utils.schedulers.datetime') as mock_datetime:
             mock_datetime.now.return_value = mock_time
-            with patch('random.random', return_value=0.3):  # 0.3 < 0.4, should send
+            with patch('random.random', return_value=0.1):  # 0.3 < 0.4, should send
                 with patch('random.choice', return_value="Keep reading!"):
                     await captured_func()
 
