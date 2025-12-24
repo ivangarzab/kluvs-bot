@@ -154,12 +154,11 @@ quill-bot/
 │   ├── general_commands.py
 │   ├── session_commands.py
 │   └── utility_commands.py
-├── database/              # Database clients and utilities
 ├── events/                # Discord event handlers
 ├── services/              # External service integrations
 │   ├── openai_service.py
 │   └── weather_service.py
-├── tests/                 # Unit test suite (13 test files)
+├── tests/                 # Unit test suite (18 test files, 131 tests)
 ├── utils/                 # Shared utilities
 ├── bot.py                 # Main bot class
 ├── main.py                # Application entry point

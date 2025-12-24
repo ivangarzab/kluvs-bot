@@ -27,18 +27,12 @@ quill-bot/
 │   ├── general_commands.py # Help and usage info
 │   ├── session_commands.py # Book session management
 │   └── utility_commands.py # Weather, AI chat, fun facts
-├── database/              # Database clients and utilities
-│   ├── db_client.py       # Legacy Supabase client (deprecated in favor of API)
-│   ├── local_database.py  # SQLite for local development
-│   ├── export_data.py     # Database export utility
-│   ├── import_data.py     # Database import utility
-│   └── supabase_schema.sql # PostgreSQL schema definition
 ├── events/                # Discord event handlers
 │   └── message_handler.py # Message events, greetings, reactions
 ├── services/              # External service integrations
 │   ├── openai_service.py  # OpenAI GPT-3.5-turbo wrapper
 │   └── weather_service.py # Weatherbit.io API wrapper
-├── tests/                 # Comprehensive unit test suite (13 test files)
+├── tests/                 # Comprehensive unit test suite (18 test files)
 │   ├── test_*.py          # Individual test modules
 │   └── run_tests.py       # Test runner
 ├── utils/                 # Shared utilities
@@ -123,7 +117,8 @@ Comprehensive REST API client with custom exceptions:
 
 ### Database Schema
 
-**Main Tables:**
+**Main Tables (Supabase PostgreSQL):**
+= `Servers` - Discord server definitions (linked to Clubs)
 - `Clubs` - Book club definitions (linked to Discord channels)
 - `Members` - User profiles (shared across clubs)
 - `MemberClubs` - Many-to-many relationship
@@ -132,10 +127,7 @@ Comprehensive REST API client with custom exceptions:
 - `Discussions` - Scheduled discussion topics
 - `ShameList` - Members who didn't finish books
 
-**Development Database:**
-- SQLite file: `local_bookclub.db`
-- Same schema as production
-- Import/export utilities for data migration
+All database operations are handled through the `api/bookclub_api.py` client which communicates with Supabase Edge Functions.
 
 ## Commands Reference
 
@@ -187,10 +179,15 @@ Comprehensive REST API client with custom exceptions:
 - **IDE Support:** VS Code unittest configuration
 
 ### Test Organization
-13 test files covering all major components:
-- `test_bookclub_api.py` (569 lines) - API client comprehensive tests
-- `test_database.py` (402 lines) - Database operations
-- `test_session_commands.py` (221 lines) - Session command tests
+18 test files covering all major components:
+- `test_bookclub_api.py` (680+ lines) - API client comprehensive tests
+- `test_session_commands.py` (340 lines) - Session command tests
+- `test_general_commands_comprehensive.py` - Help and usage commands
+- `test_utility_commands_comprehensive.py` - Weather, funfact, robot commands
+- `test_fun_commands_comprehensive.py` - Dice, coin, choose commands
+- `test_message_handler_comprehensive.py` - Event handler tests
+- `test_schedulers_comprehensive.py` - Scheduled task tests
+- `test_admin_commands.py` - Admin command tests
 - `test_openai_service.py` (230 lines) - OpenAI service tests
 - `test_utility_commands.py` (200 lines) - Utility commands
 - `test_schedulers.py` (191 lines) - Scheduled tasks
@@ -333,20 +330,18 @@ URL_EDGE_FUNCTION=<edge_function_base_url>
 7. **OpenAI Integration (PR #3)** - AI features
 
 ### Migration Notes
-- `database/db_client.py` is legacy code, use `api/bookclub_api.py` instead
+- All database operations now go through `api/bookclub_api.py` (Supabase Edge Functions)
 - Hardcoded club IDs in config.py need migration to dynamic lookup
-- Some database tests currently failing (KeyError issues)
 
 ## Known Issues and TODOs
 
 ### Active TODOs (from code comments)
 1. **config.py**: Hardcoded CLUB_IDS need to be dynamic
-2. **Database tests**: Failing due to schema mismatches (numberofbooksread field)
-3. **Type hints**: Missing in cog files
-4. **Linting**: No automated code style checks in CI
+2. **Type hints**: Missing in cog files
+3. **Linting**: No automated code style checks in CI
 
 ### Improvement Opportunities
-1. Increase test coverage from 37% to 70%+
+1. Increase test coverage from 39% to 70%+
 2. Add type hints throughout codebase
 3. Implement pre-commit hooks for formatting
 4. Add linting (pylint, flake8, or ruff)
@@ -396,11 +391,8 @@ tail -f logs/bot.log
 # Test specific module
 python -m unittest tests.test_bookclub_api
 
-# Export database
-python database/export_data.py
-
-# Import database
-python database/import_data.py
+# Run all tests
+python tests/run_tests.py
 ```
 
 ### Log Locations
