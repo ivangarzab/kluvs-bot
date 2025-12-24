@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, AsyncMock
 from cogs.general_commands import setup_general_commands
 
 
-class TestGeneralCommandsComprehensive(unittest.TestCase):
-    """Comprehensive test cases for general commands"""
+class TestGeneralCommandsComprehensive(unittest.IsolatedAsyncioTestCase):
+    """Comprehensive test cases for general commands - PROPERLY ASYNC"""
 
     def setUp(self):
         """Set up common test fixtures"""

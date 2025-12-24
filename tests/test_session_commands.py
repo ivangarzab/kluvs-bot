@@ -8,8 +8,8 @@ from cogs.session_commands import setup_session_commands
 from api.bookclub_api import ResourceNotFoundError
 
 
-class TestSessionCommands(unittest.TestCase):
-    """Test cases for session commands"""
+class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
+    """Test cases for session commands - PROPERLY ASYNC"""
 
     def setUp(self):
         """Set up common test fixtures"""

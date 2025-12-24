@@ -7,8 +7,8 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from cogs.general_commands import setup_general_commands
 from utils.embeds import create_embed
 
-class TestGeneralCommands(unittest.TestCase):
-    """Test cases for general commands"""
+class TestGeneralCommands(unittest.IsolatedAsyncioTestCase):
+    """Test cases for general commands - PROPERLY ASYNC"""
     
     def setUp(self):
         """Set up common test fixtures"""
@@ -39,7 +39,7 @@ class TestGeneralCommands(unittest.TestCase):
         self.assertIn('help', self.commands)
         self.assertIn('usage', self.commands)
 
-    @patch('utils.embeds.create_embed')
+    @patch('cogs.general_commands.create_embed')
     async def test_help_command(self, mock_create_embed):
         """Test the help command"""
         # Mock an interaction
@@ -67,7 +67,7 @@ class TestGeneralCommands(unittest.TestCase):
         # Verify the interaction response was sent
         interaction.response.send_message.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
+    @patch('cogs.general_commands.create_embed')
     async def test_usage_command(self, mock_create_embed):
         """Test the usage command"""
         # Mock an interaction

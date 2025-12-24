@@ -8,8 +8,8 @@ import random
 from cogs.fun_commands import setup_fun_commands
 
 
-class TestFunCommandsComprehensive(unittest.TestCase):
-    """Comprehensive test cases for fun commands"""
+class TestFunCommandsComprehensive(unittest.IsolatedAsyncioTestCase):
+    """Comprehensive test cases for fun commands - PROPERLY ASYNC"""
 
     def setUp(self):
         """Set up common test fixtures"""

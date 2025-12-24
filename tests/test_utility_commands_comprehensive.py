@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from cogs.utility_commands import setup_utility_commands
 
 
-class TestUtilityCommandsComprehensive(unittest.TestCase):
-    """Comprehensive test cases for utility commands"""
+class TestUtilityCommandsComprehensive(unittest.IsolatedAsyncioTestCase):
+    """Comprehensive test cases for utility commands - PROPERLY ASYNC"""
 
     def setUp(self):
         """Set up common test fixtures"""
@@ -172,8 +172,18 @@ class TestUtilityCommandsComprehensive(unittest.TestCase):
         # Verify response was sent
         ctx.send.assert_called_once()
 
-    async def test_weather_command_different_locations(self):
+    @patch('cogs.utility_commands.WeatherService')
+    async def test_weather_command_different_locations(self, mock_weather_service_class):
         """Test weather command with different location inputs"""
+        # Mock weather service
+        mock_weather_service = AsyncMock()
+        mock_weather_service.get_weather = AsyncMock(return_value="Weather data")
+        mock_weather_service_class.return_value = mock_weather_service
+
+        # Re-setup to use mocked service
+        self.setUp()
+        setup_utility_commands(self.bot)
+
         # Mock interaction
         interaction = AsyncMock()
         interaction.response.defer = AsyncMock()

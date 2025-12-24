@@ -9,8 +9,8 @@ from services.weather_service import WeatherService
 from utils.embeds import create_embed
 from utils.constants import FUN_FACTS, FACT_CLOSERS
 
-class TestUtilityCommands(unittest.TestCase):
-    """Test cases for utility commands"""
+class TestUtilityCommands(unittest.IsolatedAsyncioTestCase):
+    """Test cases for utility commands - PROPERLY ASYNC"""
     
     def setUp(self):
         """Set up common test fixtures"""
@@ -56,9 +56,9 @@ class TestUtilityCommands(unittest.TestCase):
         # Mock WeatherService
         self.mock_weather_service = MagicMock(spec=WeatherService)
         self.mock_weather_service.get_weather = AsyncMock(return_value="Weather information for test city")
-        
+
         # Patch the WeatherService constructor
-        with patch('services.weather_service.WeatherService', return_value=self.mock_weather_service):
+        with patch('cogs.utility_commands.WeatherService', return_value=self.mock_weather_service):
             # Register the commands
             setup_utility_commands(self.bot)
         
@@ -67,7 +67,7 @@ class TestUtilityCommands(unittest.TestCase):
         self.assertIn('funfact', self.commands)
         self.assertIn('robot', self.commands)
 
-    @patch('utils.embeds.create_embed')
+    @patch('cogs.utility_commands.create_embed')
     async def test_weather_command(self, mock_create_embed):
         """Test the weather command"""
         # Mock an interaction
@@ -101,7 +101,7 @@ class TestUtilityCommands(unittest.TestCase):
         # Verify the followup was sent
         interaction.followup.send.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
+    @patch('cogs.utility_commands.create_embed')
     @patch('random.choice')
     async def test_funfact_command(self, mock_choice, mock_create_embed):
         """Test the funfact command"""
@@ -135,7 +135,7 @@ class TestUtilityCommands(unittest.TestCase):
         # Verify the interaction response was sent
         interaction.response.send_message.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
+    @patch('cogs.utility_commands.create_embed')
     async def test_robot_command_slash(self, mock_create_embed):
         """Test the robot slash command"""
         # Mock an interaction
@@ -167,14 +167,14 @@ class TestUtilityCommands(unittest.TestCase):
         # Verify the followup was sent
         interaction.followup.send.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
+    @patch('cogs.utility_commands.create_embed')
     async def test_robot_command_text(self, mock_create_embed):
         """Test the robot text command"""
         # Check if text command was registered
         self.assertIn('robot', self.text_commands)
-        
+
         # Mock the context
-        ctx = MagicMock()
+        ctx = AsyncMock()
         
         # Mock the embed creation
         mock_embed = MagicMock()

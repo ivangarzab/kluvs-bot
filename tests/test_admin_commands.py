@@ -8,8 +8,8 @@ import os
 from cogs.admin_commands import setup_admin_commands
 
 
-class TestAdminCommands(unittest.TestCase):
-    """Test cases for admin commands"""
+class TestAdminCommands(unittest.IsolatedAsyncioTestCase):
+    """Test cases for admin commands - PROPERLY ASYNC"""
 
     def setUp(self):
         """Set up common test fixtures"""
