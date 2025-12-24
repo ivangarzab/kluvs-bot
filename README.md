@@ -1,7 +1,7 @@
 # Quill the Librarian
 
-[![Tests](https://github.com/ivangarzab/quill-bot/workflows/Run%20Tests/badge.svg)](https://github.com/ivangarzab/quill-bot/actions)
-[![codecov](https://codecov.io/gh/ivangarzab/quill-bot/branch/main/graph/badge.svg)](https://codecov.io/gh/ivangarzab/quill-bot)
+[![Tests](https://github.com/ivangarzab/kluvs-bot/workflows/Run%20Tests/badge.svg)](https://github.com/ivangarzab/kluvs-bot/actions)
+[![codecov](https://codecov.io/gh/ivangarzab/kluvs-bot/branch/main/graph/badge.svg)](https://codecov.io/gh/ivangarzab/kluvs-bot)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Discord.py](https://img.shields.io/badge/discord.py-latest-blue.svg)](https://github.com/Rapptz/discord.py)
 
