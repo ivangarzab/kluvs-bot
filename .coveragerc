@@ -1,7 +1,13 @@
 [run]
 source = .
-omit = 
+omit =
     tests/*
     */__pycache__/*
     */site-packages/*
     setup.py
+
+[report]
+precision = 2
+
+[xml]
+output = coverage.xml

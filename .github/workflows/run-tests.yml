@@ -23,11 +23,23 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         
-    - name: Run tests
+    - name: Run tests with coverage
       run: |
-        python tests/run_tests.py
+        coverage run --source=. tests/run_tests.py
+        coverage xml
+        coverage report
       env:
         ENV: "dev"
         DEV_TOKEN: ${{ secrets.DEV_TOKEN }}
         KEY_WEATHER: ${{ secrets.KEY_WEATHER }}
         KEY_OPEN_AI: ${{ secrets.KEY_OPEN_AI }}
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
