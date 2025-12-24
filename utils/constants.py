@@ -6,6 +6,13 @@ from discord import Color
 # Default channel ID
 DEFAULT_CHANNEL = 1327357851827572872
 
+# Config variables
+SCHEDULED_MESSAGE_HOUR = 17  # Hour to send sceheduled message
+SCHEDULED_MESSAGE_PERCENTAGE = 0.25  # Chance to send scheduled messages
+GREETING_MESSAGE_PERCENTAGE = 0.4  # Chance to send greeting on mention
+REACT_TO_MENTION_PERCENTAGE = 0.5  # Chance to react to messages
+REACT_TO_RANDOM_PERCENTAGE = 0.3  # Chance to react to random messages
+
 # Color schemes for different embed types
 COLORS = {
     "success": Color.green(),

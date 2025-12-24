@@ -3,7 +3,7 @@ Handlers for message and member events
 """
 import random
 import discord
-from utils.constants import GREETINGS, REACTIONS
+from utils.constants import GREETINGS, REACTIONS, GREETING_MESSAGE_PERCENTAGE, REACT_TO_MENTION_PERCENTAGE, REACT_TO_RANDOM_PERCENTAGE
 from utils.embeds import create_embed
 
 def setup_message_handlers(bot):
@@ -20,10 +20,10 @@ def setup_message_handlers(bot):
         
         # Handle mentions
         if bot.user in message.mentions:
-            if random.random() < 0.4:
+            if random.random() < GREETING_MESSAGE_PERCENTAGE:
                 await message.channel.send(random.choice(GREETINGS))
                 print("Sent greeting message.")
-            elif random.random() > 0.5:
+            elif random.random() > REACT_TO_MENTION_PERCENTAGE:
                 await message.add_reaction(random.choice(REACTIONS))
                 print("Added reaction to message.")
                 
@@ -32,7 +32,7 @@ def setup_message_handlers(bot):
             await message.channel.send('Reading is done best in community.')
             
         # Random reactions
-        if not message.content.startswith('!') and random.random() < 0.3:
+        if not message.content.startswith('!') and random.random() < REACT_TO_RANDOM_PERCENTAGE:
             await message.add_reaction(random.choice(REACTIONS))
             
         await bot.process_commands(message)
