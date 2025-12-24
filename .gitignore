@@ -5,6 +5,8 @@
 *.egg-info
 logs/
 
+__pycache__
+
 # Coverage files
 .coverage
 htmlcov/

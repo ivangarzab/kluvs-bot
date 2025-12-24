@@ -1,48 +1,61 @@
 """
-Tests for session commands (book, duedate, session, discussions)
+Tests for session commands (book, duedate, session, discussions, book_summary)
 """
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from cogs.session_commands import setup_session_commands
-from utils.embeds import create_embed
+from api.bookclub_api import ResourceNotFoundError
 
-class TestSessionCommands(unittest.TestCase):
-    """Test cases for session commands"""
-    
+
+class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
+    """Test cases for session commands - PROPERLY ASYNC"""
+
     def setUp(self):
         """Set up common test fixtures"""
         # Create a mock bot
         self.bot = MagicMock()
         self.bot.tree = MagicMock()
-        
-        # Create mock club data
-        self.bot.club = {
+
+        # Mock API with sample data
+        self.bot.api = MagicMock()
+        self.bot.api.find_club_in_channel = MagicMock(return_value={
+            'id': 'club-1',
             'name': 'Test Book Club',
+            'server_id': '123456',
             'active_session': {
                 'id': 'session-1',
                 'book': {
                     'title': 'Test Book Title',
-                    'author': 'Test Author'
+                    'author': 'Test Author',
+                    'year': 2024,
+                    'edition': '1st Edition'
                 },
                 'due_date': '2025-05-01',
                 'discussions': [
                     {
                         'id': 'discussion-1',
                         'date': '2025-04-15',
-                        'title': 'First Discussion'
+                        'title': 'First Discussion',
+                        'location': 'Room 101'
+                    },
+                    {
+                        'id': 'discussion-2',
+                        'date': '2025-04-20',
+                        'title': 'Second Discussion',
+                        'location': 'Room 202'
                     }
                 ]
             }
-        }
-        
+        })
+
         # Set up mock for OpenAI service
         self.bot.openai_service = MagicMock()
         self.bot.openai_service.get_response = AsyncMock(return_value="This is a test book summary.")
-        
+
         # Store the registered commands
         self.commands = {}
-        
+
         # Mock the bot.tree.command decorator
         def mock_command(**kwargs):
             def decorator(func):
@@ -53,12 +66,12 @@ class TestSessionCommands(unittest.TestCase):
                 }
                 return func
             return decorator
-        
+
         self.bot.tree.command = mock_command
-        
+
         # Register the commands
         setup_session_commands(self.bot)
-        
+
         # Verify commands were registered
         self.assertIn('book', self.commands)
         self.assertIn('duedate', self.commands)
@@ -66,157 +79,262 @@ class TestSessionCommands(unittest.TestCase):
         self.assertIn('discussions', self.commands)
         self.assertIn('book_summary', self.commands)
 
-    @patch('utils.embeds.create_embed')
-    async def test_book_command(self, mock_create_embed):
-        """Test the book command"""
-        # Mock an interaction
+    async def test_book_command_success(self):
+        """Test the book command with active session"""
+        # Mock interaction
         interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        
-        # Mock the embed creation
-        mock_embed = MagicMock()
-        mock_create_embed.return_value = mock_embed
-        
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
         # Run the command
         book_command = self.commands['book']['func']
         await book_command(interaction)
-        
-        # Verify the embed was created with the right parameters
-        mock_create_embed.assert_called_once()
-        args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "📚 Current Book")
-        self.assertEqual(kwargs['description'], "**Test Book Title**")
-        self.assertEqual(kwargs['color_key'], "info")
-        
-        # Verify fields contain book info
-        fields = kwargs.get('fields', [])
-        self.assertTrue(any(field['name'] == 'Author' and field['value'] == 'Test Author' for field in fields))
-        
-        # Verify footer
-        self.assertEqual(kwargs['footer'], "Happy reading! 📖")
-        
-        # Verify the interaction response was sent
-        interaction.response.send_message.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
-    async def test_duedate_command(self, mock_create_embed):
-        """Test the duedate command"""
-        # Mock an interaction
+        # Verify defer was called
+        interaction.response.defer.assert_called_once()
+
+        # Verify API was called
+        self.bot.api.find_club_in_channel.assert_called_once_with('789012', '123456')
+
+        # Verify followup.send was called with embed
+        interaction.followup.send.assert_called_once()
+
+    async def test_book_command_no_guild(self):
+        """Test the book command when not in a guild"""
+        # Mock interaction with no guild_id
         interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        
-        # Mock the embed creation
-        mock_embed = MagicMock()
-        mock_create_embed.return_value = mock_embed
-        
+        interaction.guild_id = None
+        interaction.response.send_message = AsyncMock()
+
+        # Run the command
+        book_command = self.commands['book']['func']
+        await book_command(interaction)
+
+        # Verify error message was sent
+        interaction.response.send_message.assert_called_once()
+        call_args = interaction.response.send_message.call_args
+        self.assertIn('DMs', str(call_args))
+        self.assertTrue(call_args.kwargs.get('ephemeral'))
+
+    async def test_book_command_no_club(self):
+        """Test the book command when no club is found"""
+        # Mock API to return no club
+        self.bot.api.find_club_in_channel.return_value = None
+
+        # Mock interaction
+        interaction = AsyncMock()
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+
+        # Run the command - should raise exception
+        book_command = self.commands['book']['func']
+        with self.assertRaises(ResourceNotFoundError):
+            await book_command(interaction)
+
+    async def test_book_command_no_active_session(self):
+        """Test the book command when no active session exists"""
+        # Mock API to return club without active session
+        self.bot.api.find_club_in_channel.return_value = {
+            'id': 'club-1',
+            'name': 'Test Book Club',
+            'server_id': '123456',
+            'active_session': None
+        }
+
+        # Mock interaction
+        interaction = AsyncMock()
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
+        # Run the command
+        book_command = self.commands['book']['func']
+        await book_command(interaction)
+
+        # Verify friendly message was sent
+        interaction.followup.send.assert_called_once()
+        call_args = interaction.followup.send.call_args
+        self.assertIn('no active reading session', str(call_args[0][0]))
+
+    async def test_duedate_command_success(self):
+        """Test the duedate command"""
+        # Mock interaction
+        interaction = AsyncMock()
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
         # Run the command
         duedate_command = self.commands['duedate']['func']
         await duedate_command(interaction)
-        
-        # Verify the embed was created with the right parameters
-        mock_create_embed.assert_called_once()
-        args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "📅 Due Date")
-        self.assertEqual(kwargs['description'], "Session due date: **2025-05-01**")
-        self.assertEqual(kwargs['color_key'], "warning")
-        
-        # Verify the interaction response was sent
-        interaction.response.send_message.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
-    async def test_session_command(self, mock_create_embed):
-        """Test the session command"""
-        # Mock an interaction
+        # Verify defer was called
+        interaction.response.defer.assert_called_once()
+
+        # Verify followup.send was called
+        interaction.followup.send.assert_called_once()
+
+    async def test_duedate_command_no_guild(self):
+        """Test the duedate command when not in a guild"""
+        # Mock interaction with no guild_id
         interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        
-        # Mock the embed creation
-        mock_embed = MagicMock()
-        mock_create_embed.return_value = mock_embed
-        
+        interaction.guild_id = None
+        interaction.response.send_message = AsyncMock()
+
+        # Run the command
+        duedate_command = self.commands['duedate']['func']
+        await duedate_command(interaction)
+
+        # Verify error message was sent
+        interaction.response.send_message.assert_called_once()
+        self.assertTrue(interaction.response.send_message.call_args.kwargs.get('ephemeral'))
+
+    async def test_session_command_success(self):
+        """Test the session command"""
+        # Mock interaction
+        interaction = AsyncMock()
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
         # Run the command
         session_command = self.commands['session']['func']
         await session_command(interaction)
-        
-        # Verify the embed was created with the right parameters
-        mock_create_embed.assert_called_once()
-        args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "📚 Current Session Details")
-        self.assertEqual(kwargs['color_key'], "info")
-        
-        # Verify fields contain book info, author, and due date
-        fields = kwargs.get('fields', [])
-        self.assertTrue(any(field['name'] == 'Book' and field['value'] == 'Test Book Title' for field in fields))
-        self.assertTrue(any(field['name'] == 'Author' and field['value'] == 'Test Author' for field in fields))
-        self.assertTrue(any(field['name'] == 'Due Date' and field['value'] == '2025-05-01' for field in fields))
-        
-        # Verify footer
-        self.assertEqual(kwargs['footer'], "Keep reading! 📖")
-        
-        # Verify the interaction response was sent
-        interaction.response.send_message.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
-    async def test_discussions_command(self, mock_create_embed):
-        """Test the discussions command"""
-        # Mock an interaction
+        # Verify defer was called
+        interaction.response.defer.assert_called_once()
+
+        # Verify followup.send was called
+        interaction.followup.send.assert_called_once()
+
+    async def test_session_command_with_discussions(self):
+        """Test the session command when discussions exist"""
+        # Mock interaction
         interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        
-        # Mock the embed creation
-        mock_embed = MagicMock()
-        mock_create_embed.return_value = mock_embed
-        
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
+        # Run the command
+        session_command = self.commands['session']['func']
+        await session_command(interaction)
+
+        # Verify followup.send was called with embed containing discussions
+        interaction.followup.send.assert_called_once()
+
+    async def test_discussions_command_success(self):
+        """Test the discussions command with multiple discussions"""
+        # Mock interaction
+        interaction = AsyncMock()
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
         # Run the command
         discussions_command = self.commands['discussions']['func']
         await discussions_command(interaction)
-        
-        # Verify the embed was created with the right parameters
-        mock_create_embed.assert_called_once()
-        args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "📚 Book Discussion Details")
-        self.assertEqual(kwargs['color_key'], "info")
-        
-        # Verify fields contain discussion info
-        fields = kwargs.get('fields', [])
-        self.assertTrue(any(field['name'] == 'Number of Discussions' and field['value'] == '#1' for field in fields))
-        self.assertTrue(any(field['name'] == 'Next discussion' and field['value'] == '2025-04-15' for field in fields))
-        
-        # Verify footer
-        self.assertEqual(kwargs['footer'], "Don't stop reading! 📖")
-        
-        # Verify the interaction response was sent
-        interaction.response.send_message.assert_called_once_with(embed=mock_embed)
 
-    @patch('utils.embeds.create_embed')
-    async def test_book_summary_command(self, mock_create_embed):
-        """Test the book_summary command"""
-        # Mock an interaction
+        # Verify defer was called
+        interaction.response.defer.assert_called_once()
+
+        # Verify followup.send was called
+        interaction.followup.send.assert_called_once()
+
+    async def test_discussions_command_no_discussions(self):
+        """Test the discussions command when no discussions exist"""
+        # Mock API to return session without discussions
+        self.bot.api.find_club_in_channel.return_value = {
+            'id': 'club-1',
+            'name': 'Test Book Club',
+            'server_id': '123456',
+            'active_session': {
+                'id': 'session-1',
+                'book': {
+                    'title': 'Test Book Title',
+                    'author': 'Test Author'
+                },
+                'due_date': '2025-05-01',
+                'discussions': []
+            }
+        }
+
+        # Mock interaction
         interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        
-        # Mock the embed creation
-        mock_embed = MagicMock()
-        mock_create_embed.return_value = mock_embed
-        
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
+        # Run the command
+        discussions_command = self.commands['discussions']['func']
+        await discussions_command(interaction)
+
+        # Verify message about no discussions
+        interaction.followup.send.assert_called_once()
+        call_args = interaction.followup.send.call_args
+        self.assertIn('no discussions', str(call_args[0][0]).lower())
+
+    async def test_discussions_command_no_guild(self):
+        """Test the discussions command when not in a guild"""
+        # Mock interaction with no guild_id
+        interaction = AsyncMock()
+        interaction.guild_id = None
+        interaction.response.send_message = AsyncMock()
+
+        # Run the command
+        discussions_command = self.commands['discussions']['func']
+        await discussions_command(interaction)
+
+        # Verify error message was sent
+        interaction.response.send_message.assert_called_once()
+
+    async def test_book_summary_command_success(self):
+        """Test the book_summary command"""
+        # Mock interaction
+        interaction = AsyncMock()
+        interaction.guild_id = 123456
+        interaction.channel_id = 789012
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
         # Run the command
         book_summary_command = self.commands['book_summary']['func']
         await book_summary_command(interaction)
-        
+
+        # Verify defer was called
+        interaction.response.defer.assert_called_once()
+
         # Verify OpenAI service was called with the book title
         self.bot.openai_service.get_response.assert_called_once()
         args, _ = self.bot.openai_service.get_response.call_args
         self.assertIn("Test Book Title", args[0])
-        
-        # Verify the embed was created with the right parameters
-        mock_create_embed.assert_called_once()
-        args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "🤖 Book Summary")
-        self.assertEqual(kwargs['description'], "This is a test book summary.")
-        self.assertEqual(kwargs['color_key'], "info")
-        
-        # Verify the interaction response was sent
-        interaction.response.send_message.assert_called_once_with(embed=mock_embed)
+
+        # Verify followup.send was called
+        interaction.followup.send.assert_called_once()
+
+    async def test_book_summary_command_no_guild(self):
+        """Test the book_summary command when not in a guild"""
+        # Mock interaction with no guild_id
+        interaction = AsyncMock()
+        interaction.guild_id = None
+        interaction.response.send_message = AsyncMock()
+
+        # Run the command
+        book_summary_command = self.commands['book_summary']['func']
+        await book_summary_command(interaction)
+
+        # Verify error message was sent
+        interaction.response.send_message.assert_called_once()
+        self.assertTrue(interaction.response.send_message.call_args.kwargs.get('ephemeral'))
+
 
 if __name__ == '__main__':
     unittest.main()

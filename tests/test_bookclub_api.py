@@ -565,6 +565,123 @@ class TestBookClubAPI(unittest.TestCase):
         # Verify the error message contains the status code
         self.assertIn("500", str(context.exception))
 
+    @patch('requests.get')
+    def test_get_club_by_discord_channel(self, mock_get):
+        """Test get_club_by_discord_channel method."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": "club-1",
+            "name": "Test Club",
+            "discord_channel": "123456789",
+            "server_id": self.test_guild_id
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = self.api.get_club_by_discord_channel("123456789", self.test_guild_id)
+
+        # Assertions
+        self.assertEqual(result["name"], "Test Club")
+        self.assertEqual(result["discord_channel"], "123456789")
+        mock_get.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/club",
+            headers=self.api.headers,
+            params={"discord_channel": "123456789", "server_id": self.test_guild_id}
+        )
+
+    @patch('requests.get')
+    def test_find_club_in_channel_found(self, mock_get):
+        """Test find_club_in_channel when club is found."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": "club-1",
+            "name": "Test Club",
+            "discord_channel": "123456789"
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = self.api.find_club_in_channel("123456789", self.test_guild_id)
+
+        # Assertions
+        self.assertIsNotNone(result)
+        self.assertEqual(result["name"], "Test Club")
+
+    @patch('requests.get')
+    def test_find_club_in_channel_not_found(self, mock_get):
+        """Test find_club_in_channel when no club is found."""
+        # Set up mock to raise 404
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Club not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Not Found", response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        # Call the method - should return None instead of raising exception
+        result = self.api.find_club_in_channel("999999999", self.test_guild_id)
+
+        # Assertions
+        self.assertIsNone(result)
+
+    @patch('requests.get')
+    def test_get_all_servers(self, mock_get):
+        """Test get_all_servers method."""
+        # Set up mock response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "servers": [
+                {"id": "server-1", "name": "Server 1"},
+                {"id": "server-2", "name": "Server 2"}
+            ]
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = self.api.get_all_servers()
+
+        # Assertions
+        self.assertEqual(len(result["servers"]), 2)
+        mock_get.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/server",
+            headers=self.api.headers
+        )
+
+    @patch('requests.get')
+    def test_get_server_clubs(self, mock_get):
+        """Test get_server_clubs method."""
+        # Set up mock response - get_server_clubs calls get_server internally
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": self.test_guild_id,
+            "name": "Test Server",
+            "clubs": [
+                {"id": "club-1", "name": "Club 1"},
+                {"id": "club-2", "name": "Club 2"}
+            ]
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = self.api.get_server_clubs(self.test_guild_id)
+
+        # Assertions
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["name"], "Club 1")
+        # Should call get_server endpoint
+        mock_get.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/server",
+            headers=self.api.headers,
+            params={"id": self.test_guild_id}
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
