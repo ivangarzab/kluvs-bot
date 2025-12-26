@@ -275,6 +275,13 @@ URL_EDGE_FUNCTION=<edge_function_base_url>
 
 ### Local Setup
 1. Clone repository
+2. Install dependencies: `make install` (creates venv and installs all dependencies)
+3. Create `.env` file with required variables
+4. Run bot: `make run`
+5. Run tests: `make test`
+
+**Alternative (without Makefile):**
+1. Clone repository
 2. Create virtual environment: `python -m venv .venv`
 3. Activate: `source .venv/bin/activate`
 4. Install dependencies: `pip install -r requirements.txt`
@@ -382,17 +389,20 @@ Defined in `utils/constants.py`:
 
 ### Useful Commands
 ```bash
-# Check coverage
-coverage run --source=. tests/run_tests.py && coverage report
+# Using Makefile (recommended)
+make help          # View all available commands
+make install       # Set up venv and install dependencies
+make test          # Run all tests
+make coverage      # Run tests with coverage report
+make run           # Run the bot
 
 # View logs
 tail -f logs/bot.log
 
-# Test specific module
-python -m unittest tests.test_bookclub_api
-
-# Run all tests
-python tests/run_tests.py
+# Direct Python commands (alternative)
+python tests/run_tests.py                              # Run all tests
+python -m unittest tests.test_bookclub_api            # Test specific module
+coverage run --source=. tests/run_tests.py && coverage report  # Coverage check
 ```
 
 ### Log Locations
@@ -464,8 +474,9 @@ The bot communicates with a Supabase backend via Edge Functions (serverless):
 - **API client:** `api/bookclub_api.py`
 - **Config:** `config.py::BotConfig`
 - **Tests:** `tests/test_*.py`
-- **Run tests:** `python tests/run_tests.py`
-- **Coverage:** `coverage run --source=. tests/run_tests.py && coverage report`
+- **Run tests:** `make test` or `python tests/run_tests.py`
+- **Coverage:** `make coverage` or `coverage run --source=. tests/run_tests.py && coverage report`
+- **Help:** `make help` to see all available Makefile commands
 
 ### Contact
 **Maintainer:** Ivan Garza (ivangb6@gmail.com)

@@ -85,7 +85,25 @@ class TestAsyncModule(unittest.IsolatedAsyncioTestCase):
 
 ## Running Tests
 
-### Quick Start
+### Quick Start (Using Makefile - Recommended)
+
+```bash
+# View all available commands
+make help
+
+# Run all tests
+make test
+
+# Run with coverage
+make coverage
+
+# Generate HTML coverage report
+make coverage-html
+# Open htmlcov/index.html in browser
+```
+
+### Alternative (Direct Python Commands)
+
 ```bash
 # Run all tests
 python tests/run_tests.py
@@ -364,9 +382,9 @@ Location: `.github/workflows/run-tests.yml`
 
 **What it does:**
 1. Sets up Python 3.9 environment
-2. Installs dependencies from `requirements.txt`
-3. Runs tests with coverage: `coverage run --source=. tests/run_tests.py`
-4. Generates coverage report: `coverage xml`
+2. Installs dependencies: `make install`
+3. Runs tests with coverage: `make coverage`
+4. Generates coverage XML: `.venv/bin/python -m coverage xml`
 5. Uploads coverage to codecov
 
 **Required GitHub Secrets:**
@@ -522,8 +540,8 @@ def test_something(self):
 
 When adding new code:
 1. Write tests for new functionality
-2. Ensure tests pass: `python tests/run_tests.py`
-3. Check coverage doesn't decrease: `coverage run --source=. tests/run_tests.py && coverage report`
+2. Ensure tests pass: `make test` (or `python tests/run_tests.py`)
+3. Check coverage doesn't decrease: `make coverage` (or `coverage run --source=. tests/run_tests.py && coverage report`)
 4. All tests must pass before merging to `main`
 
 ## Resources

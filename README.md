@@ -84,24 +84,21 @@ Quill has a friendly librarian personality with:
 
 ### Local Setup
 
+#### Quick Start (Using Makefile - Recommended)
+
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/ivangarzab/quill-bot.git
    cd quill-bot
    ```
 
-2. **Create and activate virtual environment:**
+2. **Install dependencies:**
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   make install
    ```
+   This creates a virtual environment and installs all dependencies automatically.
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Set up environment variables:**
+3. **Set up environment variables:**
 
    Create a `.env` file in the project root:
    ```bash
@@ -119,12 +116,70 @@ Quill has a friendly librarian personality with:
    URL_EDGE_FUNCTION=your_edge_function_base_url
    ```
 
+4. **Run the bot:**
+   ```bash
+   make run
+   ```
+
+5. **View all available commands:**
+   ```bash
+   make help
+   ```
+
+#### Manual Setup (Alternative)
+
+<details>
+<summary>Click to expand manual setup instructions</summary>
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/ivangarzab/quill-bot.git
+   cd quill-bot
+   ```
+
+2. **Create and activate virtual environment:**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables** (same as above)
+
 5. **Run the bot:**
    ```bash
    python main.py
    ```
 
+</details>
+
 ### Running Tests
+
+#### Using Makefile (Recommended)
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage report
+make coverage
+
+# Generate HTML coverage report
+make coverage-html
+# Then open htmlcov/index.html in your browser
+
+# View all available commands
+make help
+```
+
+#### Manual Testing (Alternative)
+
+<details>
+<summary>Click to expand manual testing commands</summary>
 
 Run all tests:
 ```bash
@@ -142,6 +197,8 @@ Generate HTML coverage report:
 coverage html
 # Open htmlcov/index.html in your browser
 ```
+
+</details>
 
 ### Project Structure
 
