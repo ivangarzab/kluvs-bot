@@ -6,3 +6,5 @@ requests
 openai
 coverage
 codecov
+
+kluvs-reader @ git+https://github.com/ivangarzab/kluvs-reader.git
