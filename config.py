@@ -28,6 +28,10 @@ class BotConfig:
             # TODO: [WARNING] Hardcoded club ID for single club usage
             self.DEFAULT_CLUB_ID = "0f01ad5e-0665-4f02-8cdd-8d55ecb26ac3"
         
+        # Brains configuration
+        self.BRAINS_SUPABASE_URL = os.getenv("BRAINS_SUPABASE_URL")
+        self.BRAINS_SUPABASE_KEY = os.getenv("BRAINS_SUPABASE_KEY")
+
         # API Keys    
         self.KEY_WEATHER = os.getenv("KEY_WEATHER")
         self.KEY_OPENAI = os.getenv("KEY_OPEN_AI")
