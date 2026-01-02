@@ -202,32 +202,3 @@ def setup_session_commands(bot):
         )
         await interaction.followup.send(embed=embed)
         print(f"[SUCCESS] Sent discussions command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
-    
-    @bot.tree.command(name="book_summary", description="Let me provide a summary of the active book")
-    async def booksummary_command(interaction: discord.Interaction):
-        """Ask OpenAI for a summary of the active book."""
-        if not interaction.guild_id:
-            await interaction.response.send_message(
-                "❌ This command can only be used in a Discord server, not in DMs.", 
-                ephemeral=True
-            )
-            return
-        await interaction.response.defer()
-        
-        # Get active session data
-        club_data, session = await _get_active_session(interaction)
-        if not session:
-            return
-            
-        book_title = session['book']['title']
-        
-        response = await bot.openai_service.get_response(
-            f"What is {book_title} about?"
-        )
-        embed = create_embed(
-            title="🤖 Book Summary",
-            description=response,
-            color_key="info"
-        )
-        await interaction.followup.send(embed=embed)
-        print(f"[SUCCESS] Sent book summary command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")

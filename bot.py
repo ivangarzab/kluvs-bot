@@ -12,7 +12,7 @@ from discord.ext import commands
 
 from config import BotConfig
 from api import BookClubAPI
-from services.openai_service import OpenAIService
+from services.brains_service import BrainsService
 from utils.constants import DEFAULT_CHANNEL, GENERIC_ERRORS, RESOURCE_NOT_FOUND_MESSAGES, VALIDATION_MESSAGES, AUTH_MESSAGES, CONNECTION_MESSAGES
 from events.message_handler import setup_message_handlers
 from utils.schedulers import setup_scheduled_tasks
@@ -35,7 +35,11 @@ class BookClubBot(commands.Bot):
         
         # Initialize services
         self.api = BookClubAPI(self.config.SUPABASE_URL, self.config.SUPABASE_KEY)
-        self.openai_service = OpenAIService(self.config.KEY_OPENAI)
+        self.brains_service = BrainsService(
+            self.config.BRAINS_SUPABASE_URL,
+            self.config.BRAINS_SUPABASE_KEY,
+            self.config.KEY_OPENAI
+        )
         
         # Register cogs
         self.load_cogs()
@@ -65,14 +69,16 @@ class BookClubBot(commands.Bot):
         from cogs.fun_commands import setup_fun_commands
         from cogs.utility_commands import setup_utility_commands
         from cogs.admin_commands import setup_admin_commands
-        
+        from cogs.brains_commands import setup_brains_commands
+
         # Setup commands directly on the command tree
         setup_general_commands(self)
         setup_session_commands(self)
         setup_fun_commands(self)
         setup_utility_commands(self)
         setup_admin_commands(self)
-        
+        setup_brains_commands(self)
+
         print("All commands loaded")
 
     def setup_logging(self):
