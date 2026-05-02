@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
-from api.bookclub_api import APIError
+from api.bookclub_api import APIError, ResourceNotFoundError
 
 
 def setup_admin_commands(bot):
@@ -22,13 +22,10 @@ def setup_admin_commands(bot):
         """Returns True if the interaction author is the Discord guild owner."""
         return interaction.user == interaction.guild.owner
 
-    async def _can_manage_clubs(interaction: discord.Interaction, channel_id: str = None):
-        """Returns True if user is guild owner OR club admin in the target channel's club."""
+    def _can_manage_clubs(interaction: discord.Interaction, club_data: dict):
+        """Returns True if user is guild owner OR club admin in club_data."""
         if _check_guild_owner(interaction):
             return True
-        target = channel_id or str(interaction.channel_id)
-        guild_id = str(interaction.guild_id)
-        club_data = bot.api.find_club_in_channel(target, guild_id)
         if not club_data:
             return False
         for member in club_data.get("members", []):
@@ -37,12 +34,11 @@ def setup_admin_commands(bot):
         return False
 
     async def _confirm(interaction: discord.Interaction, prompt: str):
-        """Shows a confirmation modal with confirm/cancel buttons; returns True if confirmed."""
-        confirmed = False
+        """Shows confirm/cancel buttons; returns True if confirmed."""
 
         class ConfirmView(discord.ui.View):
-            def __init__(self, view_self):
-                super().__init__()
+            def __init__(self):
+                super().__init__(timeout=60)
                 self.confirmed = False
 
             @discord.ui.button(label="Confirm", style=discord.ButtonStyle.red)
@@ -51,6 +47,7 @@ def setup_admin_commands(bot):
                     await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
                     return
                 self.confirmed = True
+                self.stop()
                 await button_interaction.response.defer()
 
             @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -58,9 +55,10 @@ def setup_admin_commands(bot):
                 if button_interaction.user.id != interaction.user.id:
                     await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
                     return
+                self.stop()
                 await button_interaction.response.defer()
 
-        view = ConfirmView(None)
+        view = ConfirmView()
         await interaction.followup.send(prompt, view=view)
         await view.wait()
         return view.confirmed
@@ -104,12 +102,15 @@ def setup_admin_commands(bot):
     @bot.tree.command(name="admin_help", description="Show admin command reference")
     async def admin_help(interaction: discord.Interaction):
         """Display admin command reference for guild owners and club admins."""
-        if not await _can_manage_clubs(interaction):
-            await interaction.response.send_message(
-                "❌ You need to be a guild owner or club admin to use this command.",
-                ephemeral=True
-            )
-            return
+        if not _check_guild_owner(interaction):
+            channel_id = str(interaction.channel_id)
+            club_data = bot.api.find_club_in_channel(channel_id, str(interaction.guild_id))
+            if not _can_manage_clubs(interaction, club_data):
+                await interaction.response.send_message(
+                    "❌ You need to be a guild owner or club admin to use this command.",
+                    ephemeral=True
+                )
+                return
 
         embed = create_embed(
             title="📖 Admin Commands Reference",
@@ -306,11 +307,14 @@ def setup_admin_commands(bot):
         """Creates a new book club. Caller is automatically assigned as owner."""
         await interaction.response.defer()
         channel_id = str(channel.id) if channel else str(interaction.channel_id)
+        guild_id = str(interaction.guild_id)
 
         if not name or not name.strip():
             await interaction.followup.send("❌ Please provide a club name.")
             return
-        if not await _can_manage_clubs(interaction, channel_id):
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
@@ -330,7 +334,7 @@ def setup_admin_commands(bot):
 
             bot.api.create_club(
                 {"name": name, "discord_channel": channel_id, "members": [caller]},
-                str(interaction.guild_id)
+                guild_id
             )
             embed = create_embed(
                 title="✅ Club Created",
@@ -356,16 +360,16 @@ def setup_admin_commands(bot):
         """Updates club details."""
         await interaction.response.defer()
         target_channel = channel or interaction.channel
-        target_channel_id = str(target_channel.id)
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, target_channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        guild_id = str(interaction.guild_id)
-        club_data = bot.api.find_club_in_channel(target_channel_id, guild_id)
         if not club_data:
             await interaction.followup.send("❌ No book club found in that channel.")
             return
@@ -400,18 +404,19 @@ def setup_admin_commands(bot):
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        guild_id = str(interaction.guild_id)
-        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not club_data:
             await interaction.followup.send("❌ No book club found in that channel.")
             return
+
         confirmed = await _confirm(
             interaction,
             f"⚠️ This will delete **{club_data['name']}** and all its data. "
@@ -443,14 +448,15 @@ def setup_admin_commands(bot):
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        club_data = bot.api.find_club_in_channel(channel_id, str(interaction.guild_id))
         if not club_data:
             await interaction.followup.send("❌ No book club found in that channel.")
             return
@@ -487,13 +493,29 @@ def setup_admin_commands(bot):
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
+        if not club_data:
+            await interaction.followup.send("❌ No book club found in that channel.")
+            return
+
+        try:
+            member_data = bot.api.get_member(member_id)
+            member_club_ids = [c["id"] for c in member_data.get("clubs", [])]
+            if club_data["id"] not in member_club_ids:
+                await interaction.followup.send(f"❌ Member `{member_id}` is not in this club.")
+                return
+        except ResourceNotFoundError:
+            await interaction.followup.send(f"❌ Member `{member_id}` not found.")
+            return
+
         confirmed = await _confirm(
             interaction,
             f"⚠️ Remove member `{member_id}` from the club? "
@@ -527,20 +549,22 @@ def setup_admin_commands(bot):
     ):
         """Sets a member's role to admin or member."""
         await interaction.response.defer()
+
+        if role.lower() not in ("admin", "member"):
+            await interaction.followup.send("❌ Role must be `admin` or `member`.")
+            return
+
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        if role.lower() not in ("admin", "member"):
-            await interaction.followup.send("❌ Role must be `admin` or `member`.")
-            return
-        guild_id = str(interaction.guild_id)
-        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not club_data:
             await interaction.followup.send("❌ No book club found in that channel.")
             return
@@ -573,14 +597,15 @@ def setup_admin_commands(bot):
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        club_data = bot.api.find_club_in_channel(channel_id, str(interaction.guild_id))
         if not club_data:
             await interaction.followup.send("❌ No book club found in that channel.")
             return
@@ -616,18 +641,19 @@ def setup_admin_commands(bot):
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        guild_id = str(interaction.guild_id)
-        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not club_data or not club_data.get("active_session"):
             await interaction.followup.send("❌ No active session found in that channel.")
             return
+
         session_id = club_data["active_session"]["id"]
         update = {}
         if due_date and due_date.strip():
@@ -662,18 +688,19 @@ def setup_admin_commands(bot):
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(interaction, channel_id):
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
-        guild_id = str(interaction.guild_id)
-        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not club_data or not club_data.get("active_session"):
             await interaction.followup.send("❌ No active session found in that channel.")
             return
+
         session_id = club_data["active_session"]["id"]
         confirmed = await _confirm(
             interaction,
