@@ -3,6 +3,7 @@ Tests for admin commands (slash command version)
 """
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock, mock_open
+import discord
 
 from cogs.admin_commands import setup_admin_commands
 from api.bookclub_api import APIError
@@ -269,7 +270,12 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.delete_member.side_effect = APIError("delete failed")
-        await self.commands["member_remove"]["func"](interaction, member_id=42)
+
+        async def auto_confirm(self):
+            self.confirmed = True
+
+        with patch.object(discord.ui.View, "wait", auto_confirm):
+            await self.commands["member_remove"]["func"](interaction, member_id=42)
         self.assertIn("❌", interaction.followup.send.call_args_list[-1].args[0])
 
     async def test_member_role_invalid_role(self):
@@ -335,7 +341,12 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.delete_session.side_effect = APIError("delete failed")
-        await self.commands["session_delete"]["func"](interaction)
+
+        async def auto_confirm(self):
+            self.confirmed = True
+
+        with patch.object(discord.ui.View, "wait", auto_confirm):
+            await self.commands["session_delete"]["func"](interaction)
         self.assertIn("❌", interaction.followup.send.call_args_list[-1].args[0])
 
 
