@@ -3,6 +3,7 @@ Admin commands (version, server, club, member, session management)
 """
 import re
 import os
+from typing import Literal
 import discord
 from discord import app_commands
 
@@ -47,16 +48,20 @@ def setup_admin_commands(bot):
                     await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
                     return
                 self.confirmed = True
+                for item in self.children:
+                    item.disabled = True
                 self.stop()
-                await button_interaction.response.defer()
+                await button_interaction.response.edit_message(view=self)
 
             @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
             async def cancel_button(self, button_interaction: discord.Interaction, button: discord.ui.Button):
                 if button_interaction.user.id != interaction.user.id:
                     await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
                     return
+                for item in self.children:
+                    item.disabled = True
                 self.stop()
-                await button_interaction.response.defer()
+                await button_interaction.response.edit_message(view=self)
 
         view = ConfirmView()
         await interaction.followup.send(prompt, view=view)
@@ -544,15 +549,11 @@ def setup_admin_commands(bot):
     async def member_role(
         interaction: discord.Interaction,
         member_id: int,
-        role: str,
+        role: Literal["admin", "member"],
         channel: discord.TextChannel = None
     ):
         """Sets a member's role to admin or member."""
         await interaction.response.defer()
-
-        if role.lower() not in ("admin", "member"):
-            await interaction.followup.send("❌ Role must be `admin` or `member`.")
-            return
 
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
@@ -569,10 +570,10 @@ def setup_admin_commands(bot):
             await interaction.followup.send("❌ No book club found in that channel.")
             return
         try:
-            bot.api.update_member(member_id, {"club_roles": {club_data["id"]: role.lower()}})
+            bot.api.update_member(member_id, {"club_roles": {club_data["id"]: role}})
             embed = create_embed(
                 title="✅ Role Updated",
-                description=f"Member `{member_id}` is now **{role.lower()}**.",
+                description=f"Member `{member_id}` is now **{role}**.",
                 color_key="success"
             )
             await interaction.followup.send(embed=embed)

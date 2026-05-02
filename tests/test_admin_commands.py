@@ -58,6 +58,7 @@ def _make_interaction(*, is_owner=True, user_id="111", channel_id="999", guild_i
     interaction.channel.id = int(channel_id)
     interaction.channel.mention = f"<#{channel_id}>"
     interaction.guild = MagicMock()
+    interaction.channel_id = int(channel_id)
     interaction.guild_id = int(guild_id)
     interaction.guild.id = int(guild_id)
     interaction.guild.name = "Test Server"
@@ -280,6 +281,39 @@ class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
         await self.commands["club_create"]["func"](interaction, name="New Club")
         self.assertIn("❌", interaction.followup.send.call_args.args[0])
 
+    async def test_club_create_denied_when_role_is_member(self):
+        interaction = _make_interaction(user_id="111", is_owner=False)
+        self.bot.api.find_club_in_channel.return_value = {
+            "id": "club-1",
+            "name": "Test Club",
+            "members": [{"discord_id": "111", "role": "member"}],
+        }
+        await self.commands["club_create"]["func"](interaction, name="New Club")
+        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.bot.api.create_club.assert_not_called()
+
+    async def test_club_update_allowed_for_owner(self):
+        interaction = _make_interaction(user_id="111", is_owner=True)
+        self.bot.api.find_club_in_channel.return_value = {
+            "id": "club-1",
+            "name": "Test Club",
+            "members": [{"discord_id": "111", "role": "owner"}],
+        }
+        self.bot.api.update_club.return_value = {"success": True}
+        await self.commands["club_update"]["func"](interaction, name="Updated")
+        self.bot.api.update_club.assert_called_once()
+
+    async def test_club_update_denied_when_no_members_in_club(self):
+        interaction = _make_interaction(user_id="111", is_owner=False)
+        self.bot.api.find_club_in_channel.return_value = {
+            "id": "club-1",
+            "name": "Test Club",
+            "members": [],
+        }
+        await self.commands["club_update"]["func"](interaction, name="X")
+        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.bot.api.update_club.assert_not_called()
+
 
 class TestClubCommands(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -295,6 +329,15 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
         call_payload = self.bot.api.create_club.call_args[0][0]
         self.assertEqual(call_payload["members"], [{"id": 1, "name": "Owner"}])
         self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+
+    async def test_club_create_success_existing_member(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Alice"}
+        self.bot.api.create_club.return_value = {"success": True}
+        await self.commands["club_create"]["func"](interaction, name="Sci-Fi Club")
+        call_payload = self.bot.api.create_club.call_args[0][0]
+        self.assertEqual(call_payload["members"], [{"id": 99, "name": "Alice"}])
+        self.bot.api.create_member.assert_not_called()
 
     async def test_club_create_empty_name(self):
         interaction = _make_interaction(user_id="111")
@@ -537,13 +580,6 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
             await self.commands["member_remove"]["func"](interaction, member_id=42)
         self.bot.api.delete_member.assert_called_once_with(42)
         self.assertIn("embed", interaction.followup.send.call_args.kwargs)
-
-    async def test_member_role_invalid_role(self):
-        interaction = _make_interaction(user_id="111")
-        self.bot.api.find_club_in_channel.return_value = self.club
-        await self.commands["member_role"]["func"](interaction, member_id=42, role="superadmin")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
-        self.bot.api.update_member.assert_not_called()
 
     async def test_member_role_success(self):
         interaction = _make_interaction(user_id="111")
