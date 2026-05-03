@@ -45,7 +45,21 @@ class BookClubBot(commands.Bot):
 
     async def setup_hook(self):
         """Setup hook called when bot is being prepared to connect"""
-        await self.tree.sync()  # Sync slash commands
+        # ============================================================
+        # DEV ONLY - REMOVE BEFORE PRODUCTION
+        # Syncs commands instantly to the test guild, bypassing the
+        # 1-hour global command cache for rapid iteration.
+        # Requires TEST_GUILD_ID in your .env file.
+        # ============================================================
+        test_guild_id = os.getenv("TEST_GUILD_ID")
+        if self.config.ENV == "dev" and test_guild_id:
+            test_guild = discord.Object(id=int(test_guild_id))
+            self.tree.copy_global_to(guild=test_guild)
+            await self.tree.sync(guild=test_guild)
+            print(f"✅ Commands instantly synced to test server: {test_guild.id}")
+        else:
+            await self.tree.sync()
+        # ============================================================
         setup_scheduled_tasks(self)
         self.loop.create_task(self.print_nickname())
         self.tree.on_error = self.on_command_error # Set up global error handler
