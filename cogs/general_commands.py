@@ -1,15 +1,100 @@
 """
-General commands (help, usage)
+General commands (help, usage, support, donate, bug, feedback)
 """
+import os
+
+import aiohttp
 import discord
-from discord import app_commands
 
 from utils.embeds import create_embed
+
+
+class BugReportModal(discord.ui.Modal, title='Report a Bug'):
+    issue_title = discord.ui.TextInput(
+        label='Issue Title',
+        placeholder='Brief description of the bug',
+        max_length=100
+    )
+    steps = discord.ui.TextInput(
+        label='Steps to Reproduce / Description',
+        style=discord.TextStyle.paragraph,
+        placeholder='Describe the bug and steps to reproduce...',
+        max_length=1000
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed = create_embed(
+            title=f"🐛 Bug Report: {self.issue_title.value}",
+            description=self.steps.value,
+            color_key="error"
+        )
+        embed.add_field(
+            name="Reported By",
+            value=f"{interaction.user.name} (ID: {interaction.user.id})",
+            inline=True
+        )
+        embed.add_field(
+            name="Server",
+            value=interaction.guild.name if interaction.guild else "DM",
+            inline=True
+        )
+
+        webhook_url = os.getenv("BUG_WEBHOOK_URL")
+        async with aiohttp.ClientSession() as session:
+            webhook = discord.Webhook.from_url(webhook_url, session=session)
+            await webhook.send(embed=embed, thread_name=self.issue_title.value)
+
+        await interaction.response.send_message(
+            "✅ Thank you! Your submission has been sent directly to the Bookmasters.",
+            ephemeral=True
+        )
+
+
+class FeedbackModal(discord.ui.Modal, title='Send Feedback'):
+    topic = discord.ui.TextInput(
+        label='Topic',
+        placeholder='What is your feedback about?',
+        max_length=100
+    )
+    feedback = discord.ui.TextInput(
+        label='Your Feedback',
+        style=discord.TextStyle.paragraph,
+        placeholder='Share your thoughts...',
+        max_length=1000
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed = create_embed(
+            title=f"💬 Feedback: {self.topic.value}",
+            description=self.feedback.value,
+            color_key="info"
+        )
+        embed.add_field(
+            name="Submitted By",
+            value=f"{interaction.user.name} (ID: {interaction.user.id})",
+            inline=True
+        )
+        embed.add_field(
+            name="Server",
+            value=interaction.guild.name if interaction.guild else "DM",
+            inline=True
+        )
+
+        webhook_url = os.getenv("FEEDBACK_WEBHOOK_URL")
+        async with aiohttp.ClientSession() as session:
+            webhook = discord.Webhook.from_url(webhook_url, session=session)
+            await webhook.send(embed=embed, thread_name=self.topic.value)
+
+        await interaction.response.send_message(
+            "✅ Thank you! Your submission has been sent directly to the Bookmasters.",
+            ephemeral=True
+        )
+
 
 def setup_general_commands(bot):
     """
     Setup general commands for the bot
-    
+
     Args:
         bot: The bot instance
     """
@@ -36,7 +121,7 @@ def setup_general_commands(bot):
         embed.set_footer(text=f"Happy reading! 📚")
         await interaction.response.send_message(embed=embed)
         print("Sent help command response.")
-    
+
     @bot.tree.command(name="usage", description="Show all available commands")
     async def usage_command(interaction: discord.Interaction):
         embed = create_embed(
@@ -71,3 +156,33 @@ def setup_general_commands(bot):
         embed.set_footer(text=f"Use / for slash commands, ! for admin commands")
         await interaction.response.send_message(embed=embed)
         print("Sent usage command response.")
+
+    @bot.tree.command(name="support", description="Get support for Kluvs")
+    async def support_command(interaction: discord.Interaction):
+        embed = create_embed(
+            title="🤝 Community Support",
+            description="Need help? Join our community Discord for support, answers, and updates!",
+            color_key="info"
+        )
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Join Community", url="https://kluvs.com/discord"))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @bot.tree.command(name="donate", description="Support the Kluvs project")
+    async def donate_command(interaction: discord.Interaction):
+        embed = create_embed(
+            title="☕ Support Kluvs",
+            description="Kluvs is an indie project built with love. Your support helps keep it alive and growing!\n\nEvery contribution, big or small, means the world to us. Thank you! 🙏",
+            color_key="royal"
+        )
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Buy Me a Coffee", url="https://buymeacoffee.com/kluvs"))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @bot.tree.command(name="bug", description="Report a bug to the Kluvs team")
+    async def bug_command(interaction: discord.Interaction):
+        await interaction.response.send_modal(BugReportModal())
+
+    @bot.tree.command(name="feedback", description="Send feedback to the Kluvs team")
+    async def feedback_command(interaction: discord.Interaction):
+        await interaction.response.send_modal(FeedbackModal())
