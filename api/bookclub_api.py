@@ -1,4 +1,5 @@
 # bookclub_api.py
+import asyncio
 import os
 import requests
 from typing import Dict, List, Optional, Union, Any
@@ -675,6 +676,36 @@ class BookClubAPI:
             return response.json()
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "session", session_id)
+
+    # Book Methods
+    def _search_books_sync(self, query: str) -> List[Dict]:
+        if len(query) < 2:
+            return []
+        url = f"{self.functions_url}/book"
+        try:
+            response = requests.get(url, headers=self.headers, params={"q": query})
+            response.raise_for_status()
+            return response.json().get("books", [])
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "book")
+
+    async def search_books(self, query: str) -> List[Dict]:
+        return await asyncio.to_thread(self._search_books_sync, query)
+
+    def _register_book_sync(self, title: str, author: str, external_google_id: str = None) -> Dict:
+        url = f"{self.functions_url}/book"
+        data: Dict = {"title": title, "author": author}
+        if external_google_id:
+            data["external_google_id"] = external_google_id
+        try:
+            response = requests.post(url, headers=self.headers, json=data)
+            response.raise_for_status()
+            return response.json()["book"]
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "book")
+
+    async def register_book(self, title: str, author: str, external_google_id: str = None) -> Dict:
+        return await asyncio.to_thread(self._register_book_sync, title, author, external_google_id)
 
     def delete_session(self, session_id: str) -> Dict:
         """
