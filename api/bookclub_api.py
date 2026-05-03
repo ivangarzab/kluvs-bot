@@ -1,6 +1,5 @@
 # bookclub_api.py
 import asyncio
-import os
 import requests
 from typing import Dict, List, Optional, Union, Any
 
@@ -731,45 +730,3 @@ class BookClubAPI:
             return response.json()
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "session", session_id)
-
-
-# Example usage
-if __name__ == "__main__":
-    # Initialize the API client
-    api = BookClubAPI(
-        base_url=os.getenv("SUPABASE_URL", "http://localhost:54321"),
-        api_key=os.getenv("SUPABASE_KEY", "your-local-anon-key")
-    )
-    
-    # Example of context-aware usage
-    guild_id = "1039326367428395038"  # Would come from Discord interaction
-    channel_id = "987654321098765432"  # Would come from Discord interaction
-    
-    try:
-        # Example 1: Get all servers
-        all_servers = api.get_all_servers()
-        print(f"Found {len(all_servers['servers'])} servers")
-        
-        # Example 2: Get specific server with detailed club info
-        server = api.get_server(guild_id)
-        print(f"Server: {server['name']} has {len(server['clubs'])} clubs")
-        
-        # Example 3: Find club by Discord channel
-        club = api.get_club_by_discord_channel(channel_id, guild_id)
-        print(f"Found club '{club['name']}' in channel {channel_id}")
-        
-        # Example 4: Convenience method for finding club (returns None if not found)
-        club = api.find_club_in_channel(channel_id, guild_id)
-        if club:
-            print(f"Club found: {club['name']}")
-        else:
-            print("No club found in this channel")
-            
-    except ResourceNotFoundError as e:
-        print(f"Resource not found: {e}")
-    except ValidationError as e:
-        print(f"Validation error: {e}")
-    except AuthenticationError as e:
-        print(f"Authentication error: {e}")
-    except APIError as e:
-        print(f"API error: {e}")

@@ -26,7 +26,7 @@ async def book_autocomplete(interaction: discord.Interaction, current: str) -> l
     for book in books:
         gid = book.get("external_google_id", "")
         title = book.get("title", "Unknown")
-        author = book.get("author", "")
+        author = book.get("author") or ""
 
         # Display name shown to the user (max 100 chars)
         display = f"{title} — {author}" if author else title
@@ -34,7 +34,7 @@ async def book_autocomplete(interaction: discord.Interaction, current: str) -> l
         # Value carries registration data: "{gid}|{title}|{author}", max 100 chars.
         # Budget: 100 - len(gid) - 2 pipes. Author capped at 30; title fills the rest.
         budget = 100 - len(gid) - 2
-        author_part = author[:min(len(author), 30)]
+        author_part = author[:min(len(author), 30)] if author else ""
         title_part = title[:max(1, budget - len(author_part))]
         value = f"{gid}|{title_part}|{author_part}"
 

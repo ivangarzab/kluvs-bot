@@ -955,6 +955,123 @@ class TestAdminHelpCommand(unittest.IsolatedAsyncioTestCase):
         interaction.response.send_message.assert_called_once()
         self.assertIn("embed", interaction.response.send_message.call_args.kwargs)
 
+    async def test_help_denied_for_non_admin(self):
+        interaction = _make_interaction(is_owner=False, user_id="999", has_admin_perms=False)
+        self.bot.api.find_club_in_channel.return_value = None
+        await self.commands["admin_help"]["func"](interaction)
+        self.assertIn("❌", interaction.response.send_message.call_args.args[0])
+
+    @patch("builtins.open", new_callable=MagicMock)
+    @patch("re.search")
+    async def test_version_success(self, mock_search, mock_open):
+        """Test version command displays version."""
+        interaction = _make_interaction()
+        mock_match = MagicMock()
+        mock_match.group.return_value = "1.0.0"
+        mock_search.return_value = mock_match
+
+        mock_file_handle = MagicMock()
+        mock_file_handle.read.return_value = 'version = "1.0.0"'
+        mock_open.return_value.__enter__.return_value = mock_file_handle
+
+        await self.commands["version"]["func"](interaction)
+
+        interaction.response.send_message.assert_called_once()
+        call_args = interaction.response.send_message.call_args
+        self.assertIn("embed", call_args.kwargs)
+
+    @patch("builtins.open")
+    async def test_version_file_not_found(self, mock_open):
+        """Test version command when setup.py not found."""
+        interaction = _make_interaction()
+        mock_open.side_effect = FileNotFoundError()
+
+        await self.commands["version"]["func"](interaction)
+
+        interaction.response.send_message.assert_called_once()
+        call_args = interaction.response.send_message.call_args
+        self.assertIn("embed", call_args.kwargs)
+        # Should show error message
+        self.assertIn("Error", call_args.kwargs["embed"].title)
+
+    @patch("builtins.open")
+    @patch("re.search")
+    async def test_version_no_match(self, mock_search, mock_open):
+        """Test version command when version not found in file."""
+        interaction = _make_interaction()
+        mock_search.return_value = None
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value.read.return_value = 'no version here'
+        mock_open.return_value = mock_file
+
+        await self.commands["version"]["func"](interaction)
+
+        interaction.response.send_message.assert_called_once()
+        call_args = interaction.response.send_message.call_args
+        self.assertIn("embed", call_args.kwargs)
+        self.assertIn("Error", call_args.kwargs["embed"].title)
+
+
+class TestBookAutocompleteAdvanced(unittest.IsolatedAsyncioTestCase):
+    """Additional tests for book autocomplete edge cases."""
+
+    async def test_book_autocomplete_empty_title(self):
+        """Test autocomplete handles missing title gracefully."""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        interaction.client.api.search_books.return_value = [
+            {
+                "external_google_id": "abc123",
+                "title": "",  # Empty title
+                "author": "Frank Herbert"
+            }
+        ]
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "dune")
+
+        self.assertEqual(len(choices), 1)
+        self.assertEqual(choices[0].name, " — Frank Herbert")
+
+    async def test_book_autocomplete_missing_author(self):
+        """Test autocomplete handles missing author."""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        interaction.client.api.search_books.return_value = [
+            {
+                "external_google_id": "abc123",
+                "title": "Unknown Book",
+                "author": ""  # Empty author
+            }
+        ]
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "unknown")
+
+        self.assertEqual(len(choices), 1)
+        self.assertEqual(choices[0].name, "Unknown Book")
+
+    async def test_book_autocomplete_none_values(self):
+        """Test autocomplete handles None values."""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        interaction.client.api.search_books.return_value = [
+            {
+                "external_google_id": "abc123",
+                "title": "Book",
+                "author": None  # None author
+            }
+        ]
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "book")
+
+        self.assertEqual(len(choices), 1)
+        self.assertEqual(choices[0].name, "Book")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -835,6 +835,167 @@ class TestBookClubAPI(unittest.TestCase):
             json={"title": "Foundation", "author": "Asimov"}
         )
 
+    # Error handling tests
+    @patch('requests.get')
+    def test_handle_404_error(self, mock_get):
+        """Test 404 error raises ResourceNotFoundError."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.get_server("nonexistent-id")
+
+    @patch('requests.get')
+    def test_handle_400_error(self, mock_get):
+        """Test 400 error raises ValidationError."""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.text = "Invalid request"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(ValidationError):
+            self.api.get_server("test-id")
+
+    @patch('requests.get')
+    def test_handle_401_error(self, mock_get):
+        """Test 401 error raises AuthenticationError."""
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.text = "Unauthorized"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(AuthenticationError):
+            self.api.get_server("test-id")
+
+    @patch('requests.get')
+    def test_handle_403_error(self, mock_get):
+        """Test 403 error raises AuthenticationError."""
+        mock_response = Mock()
+        mock_response.status_code = 403
+        mock_response.text = "Forbidden"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(AuthenticationError):
+            self.api.get_server("test-id")
+
+    @patch('requests.get')
+    def test_handle_500_error(self, mock_get):
+        """Test 500 error raises APIError."""
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal server error"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(APIError):
+            self.api.get_server("test-id")
+
+    @patch('requests.get')
+    def test_handle_connection_error(self, mock_get):
+        """Test connection error raises APIError."""
+        mock_get.side_effect = requests.exceptions.ConnectionError("Failed to connect")
+
+        with self.assertRaises(APIError) as context:
+            self.api.get_server("test-id")
+        self.assertIn("Connection error", str(context.exception))
+
+    @patch('requests.post')
+    def test_register_book_validation_error(self, mock_post):
+        """Test register_book with invalid data raises ValidationError."""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.text = "Title is required"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_post.return_value = mock_response
+
+        with self.assertRaises(ValidationError):
+            self.api._register_book_sync("", "Author")  # Empty title
+
+    @patch('requests.get')
+    def test_search_books_connection_error(self, mock_get):
+        """Test search_books with connection error."""
+        mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
+
+        with self.assertRaises(APIError):
+            self.api._search_books_sync("dune")
+
+    @patch('requests.post')
+    def test_create_member_success(self, mock_post):
+        """Test create_member with valid data."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Member created",
+            "member": {"id": 1, "name": "John Doe", "points": 0}
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        result = self.api.create_member({"name": "John Doe"})
+
+        self.assertEqual(result["member"]["name"], "John Doe")
+        mock_post.assert_called_once()
+
+    @patch('requests.put')
+    def test_update_member_success(self, mock_put):
+        """Test update_member with valid data."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Member updated",
+            "member": {"id": 1, "name": "Jane Doe"}
+        }
+        mock_response.raise_for_status = Mock()
+        mock_put.return_value = mock_response
+
+        result = self.api.update_member(1, {"name": "Jane Doe"})
+
+        self.assertEqual(result["member"]["name"], "Jane Doe")
+
+    @patch('requests.delete')
+    def test_delete_member_success(self, mock_delete):
+        """Test delete_member."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"success": True, "message": "Member deleted"}
+        mock_response.raise_for_status = Mock()
+        mock_delete.return_value = mock_response
+
+        result = self.api.delete_member(1)
+
+        self.assertTrue(result["success"])
+
+    @patch('requests.get')
+    def test_find_club_in_channel_not_found(self, mock_get):
+        """Test find_club_in_channel returns None when not found."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        result = self.api.find_club_in_channel("channel-123", "guild-456")
+
+        self.assertIsNone(result)
+
+    @patch('requests.get')
+    def test_get_member_by_discord_id_not_found(self, mock_get):
+        """Test get_member_by_discord_id returns None when not found."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        result = self.api.get_member_by_discord_id("discord-id")
+
+        self.assertIsNone(result)
+
 
 if __name__ == '__main__':
     unittest.main()
