@@ -138,6 +138,7 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction()
         self._mock_message("My Book Club")
         self.bot.api.register_server.return_value = {"success": True}
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = None
         self.bot.api.create_member.return_value = {"member": {"id": 1, "name": "Test User"}}
         self.bot.api.create_club.return_value = {"success": True}
@@ -151,6 +152,7 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction()
         self._mock_message("Reader Club")
         self.bot.api.register_server.return_value = {"success": True}
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         self.bot.api.create_club.return_value = {"success": True}
         await self.commands["setup"]["func"](interaction)
@@ -161,11 +163,23 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction()
         self._mock_message("Reader Club")
         self.bot.api.register_server.side_effect = APIError("server already registered")
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         self.bot.api.create_club.return_value = {"success": True}
         await self.commands["setup"]["func"](interaction)
         # should continue to club creation despite the error
         self.bot.api.create_club.assert_called_once()
+
+    async def test_setup_channel_collision(self):
+        interaction = _make_interaction()
+        self._mock_message("My Book Club")
+        self.bot.api.register_server.return_value = {"success": True}
+        self.bot.api.find_club_in_channel.return_value = {"id": "club-1", "name": "Existing Club"}
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
+        await self.commands["setup"]["func"](interaction)
+        self.bot.api.create_club.assert_not_called()
+        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.assertIn("already hosting", interaction.followup.send.call_args.args[0])
 
     async def test_setup_register_fails(self):
         interaction = _make_interaction()
@@ -262,6 +276,7 @@ class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
     async def test_guild_owner_can_create_club_without_being_admin(self):
         """Guild owner should be able to create a club even if not a club admin."""
         interaction = _make_interaction(user_id="111", is_owner=True)
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.create_club.return_value = {"success": True}
         self.bot.api.get_member_by_discord_id.return_value = None
         self.bot.api.create_member.return_value = {"member": {"id": 1, "name": "Owner"}}
@@ -335,6 +350,7 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
 
     async def test_club_create_success(self):
         interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = None
         self.bot.api.create_member.return_value = {"member": {"id": 1, "name": "Owner"}}
         self.bot.api.create_club.return_value = {"success": True}
@@ -345,12 +361,24 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
 
     async def test_club_create_success_existing_member(self):
         interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Alice"}
         self.bot.api.create_club.return_value = {"success": True}
         await self.commands["club_create"]["func"](interaction, name="Sci-Fi Club")
         call_payload = self.bot.api.create_club.call_args[0][0]
         self.assertEqual(call_payload["members"], [{"id": 99, "name": "Alice"}])
         self.bot.api.create_member.assert_not_called()
+
+    async def test_club_create_channel_collision(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = {
+            "id": "club-1", "name": "Existing Club",
+            "members": [{"discord_id": "111", "role": "owner"}],
+        }
+        await self.commands["club_create"]["func"](interaction, name="New Club")
+        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.assertIn("already hosting", interaction.followup.send.call_args.args[0])
+        self.bot.api.create_club.assert_not_called()
 
     async def test_club_create_empty_name(self):
         interaction = _make_interaction(user_id="111")
@@ -360,6 +388,7 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
 
     async def test_club_create_api_error(self):
         interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Alice"}
         self.bot.api.create_club.side_effect = APIError("server error")
         await self.commands["club_create"]["func"](interaction, name="Sci-Fi Club")

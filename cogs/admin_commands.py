@@ -208,6 +208,13 @@ def setup_admin_commands(bot):
 
         channel_id = str(interaction.channel_id)
 
+        if bot.api.find_club_in_channel(channel_id, guild_id):
+            await interaction.followup.send(
+                "❌ This channel is already hosting a book club. "
+                "Please use a different channel or delete the existing club first."
+            )
+            return
+
         try:
             existing = bot.api.get_member_by_discord_id(str(interaction.user.id))
             if existing:
@@ -326,6 +333,12 @@ def setup_admin_commands(bot):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
+            )
+            return
+        if club_data:
+            await interaction.followup.send(
+                "❌ This channel is already hosting a book club. "
+                "Please use a different channel or delete the existing club first."
             )
             return
         try:
