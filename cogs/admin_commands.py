@@ -19,13 +19,16 @@ def setup_admin_commands(bot):
         bot: The bot instance
     """
 
-    def _check_guild_owner(interaction: discord.Interaction):
-        """Returns True if the interaction author is the Discord guild owner."""
-        return interaction.user == interaction.guild.owner
+    def _check_guild_admin(interaction: discord.Interaction):
+        """Returns True if the user is the guild owner or has administrator/manage_guild permissions."""
+        if interaction.user == interaction.guild.owner:
+            return True
+        perms = interaction.user.guild_permissions
+        return perms.administrator or perms.manage_guild
 
     def _can_manage_clubs(interaction: discord.Interaction, club_data: dict):
-        """Returns True if user is guild owner OR club admin in club_data."""
-        if _check_guild_owner(interaction):
+        """Returns True if user is guild admin OR club admin in club_data."""
+        if _check_guild_admin(interaction):
             return True
         if not club_data:
             return False
@@ -107,7 +110,7 @@ def setup_admin_commands(bot):
     @bot.tree.command(name="admin_help", description="Show admin command reference")
     async def admin_help(interaction: discord.Interaction):
         """Display admin command reference for guild owners and club admins."""
-        if not _check_guild_owner(interaction):
+        if not _check_guild_admin(interaction):
             channel_id = str(interaction.channel_id)
             club_data = bot.api.find_club_in_channel(channel_id, str(interaction.guild_id))
             if not _can_manage_clubs(interaction, club_data):
@@ -204,6 +207,13 @@ def setup_admin_commands(bot):
             return
 
         channel_id = str(interaction.channel_id)
+
+        if bot.api.find_club_in_channel(channel_id, guild_id):
+            await interaction.followup.send(
+                "❌ This channel is already hosting a book club. "
+                "Please use a different channel or delete the existing club first."
+            )
+            return
 
         try:
             existing = bot.api.get_member_by_discord_id(str(interaction.user.id))
@@ -323,6 +333,12 @@ def setup_admin_commands(bot):
             await interaction.followup.send(
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
+            )
+            return
+        if club_data:
+            await interaction.followup.send(
+                "❌ This channel is already hosting a book club. "
+                "Please use a different channel or delete the existing club first."
             )
             return
         try:
