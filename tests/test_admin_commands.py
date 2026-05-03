@@ -43,7 +43,7 @@ def _make_bot():
     return bot, commands
 
 
-def _make_interaction(*, is_owner=True, user_id="111", channel_id="999", guild_id="888"):
+def _make_interaction(*, is_owner=True, user_id="111", channel_id="999", guild_id="888", has_admin_perms=False):
     """Creates a mock interaction."""
     interaction = AsyncMock()
     interaction.response = AsyncMock()
@@ -54,6 +54,9 @@ def _make_interaction(*, is_owner=True, user_id="111", channel_id="999", guild_i
     interaction.user = MagicMock()
     interaction.user.id = int(user_id)
     interaction.user.display_name = "Test User"
+    interaction.user.guild_permissions = MagicMock()
+    interaction.user.guild_permissions.administrator = has_admin_perms
+    interaction.user.guild_permissions.manage_guild = has_admin_perms
     interaction.channel = MagicMock()
     interaction.channel.id = int(channel_id)
     interaction.channel.mention = f"<#{channel_id}>"
@@ -302,6 +305,16 @@ class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
         self.bot.api.update_club.return_value = {"success": True}
         await self.commands["club_update"]["func"](interaction, name="Updated")
         self.bot.api.update_club.assert_called_once()
+
+    async def test_guild_admin_perms_can_manage_clubs(self):
+        """Users with administrator or manage_guild perms should pass _check_guild_admin."""
+        interaction = _make_interaction(user_id="222", is_owner=False, has_admin_perms=True)
+        self.bot.api.find_club_in_channel.return_value = None
+        self.bot.api.get_member_by_discord_id.return_value = None
+        self.bot.api.create_member.return_value = {"member": {"id": 2, "name": "Admin User"}}
+        self.bot.api.create_club.return_value = {"success": True}
+        await self.commands["club_create"]["func"](interaction, name="New Club")
+        self.bot.api.create_club.assert_called_once()
 
     async def test_club_update_denied_when_no_members_in_club(self):
         interaction = _make_interaction(user_id="111", is_owner=False)
@@ -762,6 +775,12 @@ class TestAdminHelpCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("embed", interaction.response.send_message.call_args.kwargs)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
         self.assertIn("Admin Commands", embed.title)
+
+    async def test_help_allowed_for_guild_admin_perms(self):
+        interaction = _make_interaction(is_owner=False, user_id="222", has_admin_perms=True)
+        await self.commands["admin_help"]["func"](interaction)
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("embed", interaction.response.send_message.call_args.kwargs)
 
     async def test_help_allowed_for_club_admin(self):
         interaction = _make_interaction(is_owner=False, user_id="111")
