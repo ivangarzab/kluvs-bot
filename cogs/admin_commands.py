@@ -3,7 +3,7 @@ Admin commands (version, server, club, member, session management)
 """
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Literal
 import discord
 from discord import app_commands
@@ -860,17 +860,21 @@ def setup_admin_commands(bot):
     @app_commands.describe(
         title="Discussion title (e.g. 'Chapters 1-5')",
         date="Discussion date (YYYY-MM-DD)",
-        location="Optional location (e.g. 'Discord', 'Library')",
+        time="Discussion start time in 24h format (HH:MM, e.g. 18:00)",
+        duration="Duration in hours (default: 1)",
+        location="Location (default: Discord)",
         channel="The channel containing the club (defaults to current channel)"
     )
     async def discussion_add(
         interaction: discord.Interaction,
         title: str,
         date: str,
-        location: str = None,
+        time: str,
+        duration: float = 1.0,
+        location: str = "Discord",
         channel: discord.TextChannel = None
     ):
-        """Adds a new discussion to the active reading session."""
+        """Adds a new discussion to the active reading session and creates a Discord scheduled event."""
         await interaction.response.defer()
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
@@ -896,24 +900,59 @@ def setup_admin_commands(bot):
             )
             return
 
+        try:
+            datetime.strptime(time, "%H:%M")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Time must be in **HH:MM** 24h format (e.g., `18:00`).",
+                ephemeral=True
+            )
+            return
+
+        if duration <= 0:
+            await interaction.followup.send(
+                "❌ Duration must be greater than 0.",
+                ephemeral=True
+            )
+            return
+
         session_id = club_data["active_session"]["id"]
-        new_discussion = {"title": title.strip(), "date": date.strip()}
-        if location and location.strip():
-            new_discussion["location"] = location.strip()
+        resolved_location = location.strip() if location and location.strip() else "Discord"
+        new_discussion = {"title": title.strip(), "date": date.strip(), "location": resolved_location}
 
         try:
             bot.api.update_session(session_id, {"discussions": [new_discussion]})
-            description = f"Added **{title}** on {date}"
-            if location:
-                description += f" at {location}"
-            embed = create_embed(
-                title="✅ Discussion Added",
-                description=description + ".",
-                color_key="success"
-            )
-            await interaction.followup.send(embed=embed)
         except APIError as e:
             await interaction.followup.send(f"❌ Failed to add discussion: {e}")
+            return
+
+        # Build timezone-aware datetimes for the Discord event
+        start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        end_dt = start_dt + timedelta(hours=duration)
+
+        event_warning = ""
+        try:
+            await interaction.guild.create_scheduled_event(
+                name=title.strip(),
+                start_time=start_dt,
+                end_time=end_dt,
+                entity_type=discord.EntityType.external,
+                privacy_level=discord.PrivacyLevel.guild_only,
+                location=resolved_location,
+                description=f"Book club discussion: {title.strip()}",
+            )
+        except discord.Forbidden:
+            event_warning = "\n⚠️ Discussion saved, but couldn't create a Discord event — the bot is missing **Manage Events** permission."
+        except discord.HTTPException as e:
+            event_warning = f"\n⚠️ Discussion saved, but Discord event creation failed: {e}"
+
+        description = f"Added **{title}** on {date} at {time} ({resolved_location})"
+        embed = create_embed(
+            title="✅ Discussion Added",
+            description=description + "." + event_warning,
+            color_key="success"
+        )
+        await interaction.followup.send(embed=embed)
 
     @bot.tree.command(name="discussion_update", description="Update an existing discussion in the active session")
     @app_commands.autocomplete(discussion_id=discussion_autocomplete)
