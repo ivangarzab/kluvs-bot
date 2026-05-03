@@ -132,7 +132,42 @@ class TestCommunityCommands(unittest.IsolatedAsyncioTestCase):
         interaction.response.send_message.assert_called_once()
         reply_kwargs = interaction.response.send_message.call_args
         self.assertTrue(reply_kwargs.kwargs.get('ephemeral'))
-        self.assertIn("Thank you", reply_kwargs.args[0])
+        self.assertIn("bug report", reply_kwargs.args[0])
+
+    @patch('cogs.general_commands.aiohttp.ClientSession')
+    @patch('cogs.general_commands.discord.Webhook.from_url')
+    @patch('cogs.general_commands.os.getenv')
+    async def test_bug_modal_reply_includes_channel_button_when_url_set(
+        self, mock_getenv, mock_from_url, mock_session_cls
+    ):
+        mock_getenv.side_effect = lambda key: {
+            "BUG_WEBHOOK_URL": "https://example.com/bug-webhook",
+            "BUG_CHANNEL_URL": "https://discord.com/channels/123/456",
+        }.get(key)
+
+        mock_webhook = AsyncMock()
+        mock_from_url.return_value = mock_webhook
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session_cls.return_value = mock_session
+
+        interaction = AsyncMock()
+        interaction.user.name = "TestUser"
+        interaction.user.id = 123456
+        interaction.guild.name = "Test Server"
+
+        modal = BugReportModal()
+        modal.issue_title = MagicMock()
+        modal.issue_title.value = "Crash on startup"
+        modal.steps = MagicMock()
+        modal.steps.value = "Open the app, it crashes."
+
+        await modal.on_submit(interaction)
+
+        reply_kwargs = interaction.response.send_message.call_args.kwargs
+        self.assertIn('view', reply_kwargs)
 
     # --- FeedbackModal.on_submit ---
 
@@ -173,7 +208,42 @@ class TestCommunityCommands(unittest.IsolatedAsyncioTestCase):
         interaction.response.send_message.assert_called_once()
         reply_kwargs = interaction.response.send_message.call_args
         self.assertTrue(reply_kwargs.kwargs.get('ephemeral'))
-        self.assertIn("Thank you", reply_kwargs.args[0])
+        self.assertIn("feedback", reply_kwargs.args[0])
+
+    @patch('cogs.general_commands.aiohttp.ClientSession')
+    @patch('cogs.general_commands.discord.Webhook.from_url')
+    @patch('cogs.general_commands.os.getenv')
+    async def test_feedback_modal_reply_includes_channel_button_when_url_set(
+        self, mock_getenv, mock_from_url, mock_session_cls
+    ):
+        mock_getenv.side_effect = lambda key: {
+            "FEEDBACK_WEBHOOK_URL": "https://example.com/feedback-webhook",
+            "FEEDBACK_CHANNEL_URL": "https://discord.com/channels/123/789",
+        }.get(key)
+
+        mock_webhook = AsyncMock()
+        mock_from_url.return_value = mock_webhook
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session_cls.return_value = mock_session
+
+        interaction = AsyncMock()
+        interaction.user.name = "TestUser"
+        interaction.user.id = 789012
+        interaction.guild.name = "Test Server"
+
+        modal = FeedbackModal()
+        modal.topic = MagicMock()
+        modal.topic.value = "UI Suggestion"
+        modal.feedback = MagicMock()
+        modal.feedback.value = "Please add a dark mode."
+
+        await modal.on_submit(interaction)
+
+        reply_kwargs = interaction.response.send_message.call_args.kwargs
+        self.assertIn('view', reply_kwargs)
 
 
 if __name__ == '__main__':

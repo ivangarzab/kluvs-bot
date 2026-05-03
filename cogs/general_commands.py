@@ -44,8 +44,14 @@ class BugReportModal(discord.ui.Modal, title='Report a Bug'):
             webhook = discord.Webhook.from_url(webhook_url, session=session)
             await webhook.send(embed=embed, thread_name=self.issue_title.value)
 
+        view = discord.ui.View()
+        channel_url = os.getenv("BUG_CHANNEL_URL")
+        if channel_url:
+            view.add_item(discord.ui.Button(label="Go to #bug-reports", url=channel_url))
+
         await interaction.response.send_message(
-            "✅ Thank you! Your submission has been sent directly to the Bookmasters.",
+            "✅ Your bug report has been posted! Feel free to follow up there.",
+            view=view,
             ephemeral=True
         )
 
@@ -85,8 +91,14 @@ class FeedbackModal(discord.ui.Modal, title='Send Feedback'):
             webhook = discord.Webhook.from_url(webhook_url, session=session)
             await webhook.send(embed=embed, thread_name=self.topic.value)
 
+        view = discord.ui.View()
+        channel_url = os.getenv("FEEDBACK_CHANNEL_URL")
+        if channel_url:
+            view.add_item(discord.ui.Button(label="Go to #feedback", url=channel_url))
+
         await interaction.response.send_message(
-            "✅ Thank you! Your submission has been sent directly to the Bookmasters.",
+            "✅ Your feedback has been posted! Feel free to follow up there.",
+            view=view,
             ephemeral=True
         )
 
