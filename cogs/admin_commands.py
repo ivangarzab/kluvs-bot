@@ -259,7 +259,8 @@ def setup_admin_commands(bot):
                         "`/session` — view the current session\n"
                         "`/book` — see the current book\n"
                         "`/duedate` — check the due date\n"
-                        "`/discussions` — view scheduled discussions"
+                        "`/discussions` — view scheduled discussions\n"
+                        "`/usage` — view all other commands"
                     ),
                     "inline": False,
                 },
