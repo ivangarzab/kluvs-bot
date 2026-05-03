@@ -3,12 +3,44 @@ Admin commands (version, server, club, member, session management)
 """
 import re
 import os
+from datetime import datetime
 from typing import Literal
 import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
 from api.bookclub_api import APIError, ResourceNotFoundError
+
+
+async def book_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    if len(current) < 2:
+        return []
+    try:
+        books = await interaction.client.api.search_books(current)
+        print(f"[AUTOCOMPLETE] query={current!r} → {len(books)} results")
+    except Exception as e:
+        print(f"[AUTOCOMPLETE] search_books failed: {type(e).__name__}: {e}")
+        return []
+
+    choices = []
+    for book in books:
+        gid = book.get("external_google_id", "")
+        title = book.get("title", "Unknown")
+        author = book.get("author", "")
+
+        # Display name shown to the user (max 100 chars)
+        display = f"{title} — {author}" if author else title
+
+        # Value carries registration data: "{gid}|{title}|{author}", max 100 chars.
+        # Budget: 100 - len(gid) - 2 pipes. Author capped at 30; title fills the rest.
+        budget = 100 - len(gid) - 2
+        author_part = author[:min(len(author), 30)]
+        title_part = title[:max(1, budget - len(author_part))]
+        value = f"{gid}|{title_part}|{author_part}"
+
+        choices.append(app_commands.Choice(name=display[:100], value=value))
+
+    return choices[:25]
 
 
 def setup_admin_commands(bot):
@@ -615,47 +647,84 @@ def setup_admin_commands(bot):
 
     # ── Session commands (club admin+) ────────────────────────────────────────
 
-    @bot.tree.command(name="session_create", description="Create a new reading session")
+    @bot.tree.command(name="session_create", description="Start a new reading session for the club.")
+    @app_commands.autocomplete(book=book_autocomplete)
     @app_commands.describe(
-        book_title="The title of the book",
-        author="The author of the book",
-        channel="The channel containing the club (defaults to current channel)"
+        book="Search and select a book from the library",
+        start_date="Session start date (YYYY-MM-DD, e.g. 2026-05-15)",
+        end_date="Session end date (YYYY-MM-DD, e.g. 2026-06-15)"
     )
-    async def session_create(
+    async def session_create_command(
         interaction: discord.Interaction,
-        book_title: str,
-        author: str,
-        channel: discord.TextChannel = None
+        book: str,
+        start_date: str,
+        end_date: str
     ):
-        """Creates a reading session for a club."""
-        await interaction.response.defer()
-        target_channel = channel or interaction.channel
-        channel_id = str(target_channel.id)
-        guild_id = str(interaction.guild_id)
-
-        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-        if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
-                "❌ You need to be a club admin or owner to use this command.",
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a Discord server, not in DMs.",
                 ephemeral=True
             )
             return
+
+        await interaction.response.defer()
+
+        guild_id = str(interaction.guild_id)
+        channel_id = str(interaction.channel_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not club_data:
-            await interaction.followup.send("❌ No book club found in that channel.")
-            return
-        try:
-            bot.api.create_session({
-                "club_id": club_data["id"],
-                "book": {"title": book_title, "author": author}
-            })
-            embed = create_embed(
-                title="✅ Session Created",
-                description=f"Now reading **{book_title}** by {author}.",
-                color_key="success"
+            raise ResourceNotFoundError(f"No book club found in channel {channel_id}")
+
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a Bookmaster or admin to create a session.",
+                ephemeral=True
             )
-            await interaction.followup.send(embed=embed)
-        except APIError as e:
-            await interaction.followup.send(f"❌ Failed to create session: {e}")
+            return
+
+        # Validate date format (YYYY-MM-DD)
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            end = datetime.strptime(end_date, "%Y-%m-%d")
+            if start >= end:
+                await interaction.followup.send(
+                    "❌ Start date must be before end date.",
+                    ephemeral=True
+                )
+                return
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Dates must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                ephemeral=True
+            )
+            return
+
+        # Value from autocomplete is "{external_google_id}|{title}|{author}"
+        parts = book.split("|", 2)
+        if len(parts) != 3 or not parts[1] or not parts[2]:
+            await interaction.followup.send("❌ Invalid book selection. Please use the autocomplete dropdown.", ephemeral=True)
+            return
+        gid, title, author = parts
+
+        # Register (or retrieve) the book in the local DB — idempotent via external_google_id
+        registered = await bot.api.register_book(title, author, external_google_id=gid)
+
+        session_data = {
+            "club_id": club_data["id"],
+            "book_id": registered["id"],
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        bot.api.create_session(session_data)
+
+        embed = create_embed(
+            title="📚 Session Created",
+            description=f"✅ Successfully created a new reading session starting on {start_date}.",
+            color_key="success"
+        )
+        await interaction.followup.send(embed=embed)
+        print(f"[SUCCESS] Created session: [Server: {guild_id}, Club: {club_data['id']}, Book: {registered['id']} '{title}']")
 
     @bot.tree.command(name="session_update", description="Update the active reading session")
     @app_commands.describe(
