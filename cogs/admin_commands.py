@@ -3,65 +3,76 @@ Admin commands (version, server, club, member, session management)
 """
 import re
 import os
+from typing import Literal
 import discord
-from discord.ext import commands
+from discord import app_commands
 
 from utils.embeds import create_embed
-from api.bookclub_api import APIError
+from api.bookclub_api import APIError, ResourceNotFoundError
 
 
 def setup_admin_commands(bot):
     """
-    Setup admin (prefix) commands
+    Setup admin slash commands
 
     Args:
         bot: The bot instance
     """
 
-    def _check_guild_owner(ctx):
-        """Returns True if the command author is the Discord guild owner."""
-        return ctx.author == ctx.guild.owner
+    def _check_guild_owner(interaction: discord.Interaction):
+        """Returns True if the interaction author is the Discord guild owner."""
+        return interaction.user == interaction.guild.owner
 
-    async def _can_manage_clubs(ctx, channel_id: str = None):
-        """Returns True if user is guild owner OR club admin in the target channel's club."""
-        if _check_guild_owner(ctx):
+    def _can_manage_clubs(interaction: discord.Interaction, club_data: dict):
+        """Returns True if user is guild owner OR club admin in club_data."""
+        if _check_guild_owner(interaction):
             return True
-        target = channel_id or str(ctx.channel.id)
-        club_data = bot.api.find_club_in_channel(target, str(ctx.guild.id))
         if not club_data:
             return False
         for member in club_data.get("members", []):
-            if str(member.get("discord_id")) == str(ctx.author.id):
+            if str(member.get("discord_id")) == str(interaction.user.id):
                 return member.get("role") in ("admin", "owner")
         return False
 
-    def _resolve_channel_id(ctx, args: str = ""):
-        """Extracts --channel <id> from args, falling back to the current channel."""
-        match = re.search(r'--channel\s+(\d+)', args)
-        return match.group(1) if match else str(ctx.channel.id)
+    async def _confirm(interaction: discord.Interaction, prompt: str):
+        """Shows confirm/cancel buttons; returns True if confirmed."""
 
-    async def _confirm(ctx, prompt):
-        """Sends a y/n prompt; returns True only if the user replies 'y' within 30 seconds."""
-        await ctx.send(prompt)
+        class ConfirmView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=60)
+                self.confirmed = False
 
-        def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel
+            @discord.ui.button(label="Confirm", style=discord.ButtonStyle.red)
+            async def confirm_button(self, button_interaction: discord.Interaction, button: discord.ui.Button):
+                if button_interaction.user.id != interaction.user.id:
+                    await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
+                    return
+                self.confirmed = True
+                for item in self.children:
+                    item.disabled = True
+                self.stop()
+                await button_interaction.response.edit_message(view=self)
 
-        try:
-            msg = await bot.wait_for("message", timeout=30.0, check=check)
-            return msg.content.strip().lower() == "y"
-        except TimeoutError:
-            await ctx.send("⏰ Confirmation timed out. Action cancelled.")
-            return False
+            @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+            async def cancel_button(self, button_interaction: discord.Interaction, button: discord.ui.Button):
+                if button_interaction.user.id != interaction.user.id:
+                    await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
+                    return
+                for item in self.children:
+                    item.disabled = True
+                self.stop()
+                await button_interaction.response.edit_message(view=self)
+
+        view = ConfirmView()
+        await interaction.followup.send(prompt, view=view)
+        await view.wait()
+        return view.confirmed
 
     # ── Version ──────────────────────────────────────────────────────────────
 
-    @bot.command(name="version", help="Shows the current version of the bot")
-    async def version(ctx: commands.Context):
-        """
-        Extracts and displays the current version from setup.py
-        Usage: !version
-        """
+    @bot.tree.command(name="version", description="Shows the current version of the bot")
+    async def version(interaction: discord.Interaction):
+        """Extracts and displays the current version from setup.py"""
         try:
             setup_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "setup.py")
             with open(setup_path, "r") as file:
@@ -75,33 +86,36 @@ def setup_admin_commands(bot):
                     color_key="blank",
                     timestamp=True
                 )
-                await ctx.send(embed=embed)
+                await interaction.response.send_message(embed=embed)
             else:
                 embed = create_embed(
                     title="❌ Error",
                     description="Couldn't find version information in setup.py",
                     color_key="error"
                 )
-                await ctx.send(embed=embed)
+                await interaction.response.send_message(embed=embed)
         except Exception as e:
             embed = create_embed(
                 title="❌ Error",
                 description=f"Error retrieving version: {str(e)}",
                 color_key="error"
             )
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
 
     # ── Admin Help (guild owner or club admin+) ──────────────────────────────
 
-    @bot.command(name="admin_help", help="Show admin command reference")
-    async def admin_help(ctx: commands.Context):
-        """
-        Display admin command reference for guild owners and club admins.
-        Usage: !admin_help
-        """
-        if not await _can_manage_clubs(ctx):
-            await ctx.send("❌ You need to be a guild owner or club admin to use this command.")
-            return
+    @bot.tree.command(name="admin_help", description="Show admin command reference")
+    async def admin_help(interaction: discord.Interaction):
+        """Display admin command reference for guild owners and club admins."""
+        if not _check_guild_owner(interaction):
+            channel_id = str(interaction.channel_id)
+            club_data = bot.api.find_club_in_channel(channel_id, str(interaction.guild_id))
+            if not _can_manage_clubs(interaction, club_data):
+                await interaction.response.send_message(
+                    "❌ You need to be a guild owner or club admin to use this command.",
+                    ephemeral=True
+                )
+                return
 
         embed = create_embed(
             title="📖 Admin Commands Reference",
@@ -111,100 +125,94 @@ def setup_admin_commands(bot):
                 {
                     "name": "🔧 Setup & Server",
                     "value": (
-                        "`!setup` — First-run wizard: register server and create a club\n"
-                        "`!server_register` — Register this Discord server\n"
-                        "`!server_update <name>` — Update server name\n"
-                        "`!server_delete` — Delete server and all data"
+                        "`/setup` — First-run wizard: register server and create a club\n"
+                        "`/server_register` — Register this Discord server\n"
+                        "`/server_update` — Update server name\n"
+                        "`/server_delete` — Delete server and all data"
                     ),
                     "inline": False
                 },
                 {
                     "name": "📚 Club Management",
                     "value": (
-                        "`!club_create <name>` — Create a new book club\n"
-                        "`!club_update [--name <name>] [--new-channel <id>]` — Update club details\n"
-                        "`!club_delete` — Delete the club in this channel"
+                        "`/club_create` — Create a new book club\n"
+                        "`/club_update` — Update club details\n"
+                        "`/club_delete` — Delete the club in this channel"
                     ),
                     "inline": False
                 },
                 {
                     "name": "👥 Member Management",
                     "value": (
-                        "`!member_add @User` — Add a member to the club\n"
-                        "`!member_remove <id>` — Remove a member\n"
-                        "`!member_role <id> <admin|member>` — Set member role"
+                        "`/member_add` — Add a member to the club\n"
+                        "`/member_remove` — Remove a member\n"
+                        "`/member_role` — Set member role"
                     ),
                     "inline": False
                 },
                 {
                     "name": "📖 Session Management",
                     "value": (
-                        "`!session_create \"<title>\" <author>` — Create a reading session\n"
-                        "`!session_update [--due-date YYYY-MM-DD] [--book \"<title>|<author>\"]` — Update session\n"
-                        "`!session_delete` — Delete the active session"
+                        "`/session_create` — Create a reading session\n"
+                        "`/session_update` — Update session\n"
+                        "`/session_delete` — Delete the active session"
                     ),
                     "inline": False
                 },
                 {
                     "name": "ℹ️ Other",
-                    "value": "`!version` — Show bot version",
+                    "value": "`/version` — Show bot version",
                     "inline": False
                 }
             ],
-            footer="Use a command name for more details (e.g., !club_create --help)"
+            footer="Use a command name for more details via Discord's help menu"
         )
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    # ── Setup wizard (guild owner only) ──────────────────────────────────────
+    # ── Setup wizard (manage_guild permission only) ──────────────────────────
 
-    @bot.command(name="setup", help="First-run wizard: register server and create a book club")
-    async def setup(ctx: commands.Context):
-        """
-        Guided onboarding for new servers.
-        Usage: !setup
-        """
-        if not _check_guild_owner(ctx):
-            await ctx.send("❌ Only the server owner can run `!setup`.")
-            return
+    @bot.tree.command(name="setup", description="First-run wizard: register server and create a book club")
+    @app_commands.default_permissions(manage_guild=True)
+    async def setup(interaction: discord.Interaction):
+        """Guided onboarding for new servers."""
+        await interaction.response.defer()
+        guild_id = str(interaction.guild_id)
 
-        guild_id = str(ctx.guild.id)
-
-        # Register server (idempotent — inform and continue if already registered)
         try:
-            bot.api.register_server(guild_id, ctx.guild.name)
+            bot.api.register_server(guild_id, interaction.guild.name)
         except APIError as e:
             if "already" in str(e).lower() or "duplicate" in str(e).lower():
-                await ctx.send("ℹ️ This server is already registered. Continuing to club setup…")
+                await interaction.followup.send("ℹ️ This server is already registered. Continuing to club setup…")
             else:
-                await ctx.send(f"❌ Failed to register server: {e}")
+                await interaction.followup.send(f"❌ Failed to register server: {e}")
                 return
 
-        await ctx.send("✅ Server registered! What should I call your book club?")
+        await interaction.followup.send("✅ Server registered! What should I call your book club?")
 
         def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel
+            return m.author == interaction.user and m.channel == interaction.channel
 
         try:
             msg = await bot.wait_for("message", timeout=60.0, check=check)
         except TimeoutError:
-            await ctx.send("⏰ Setup timed out. Run `!setup` again when you're ready.")
+            await interaction.followup.send("⏰ Setup timed out. Run `/setup` again when you're ready.")
             return
 
         club_name = msg.content.strip()
         if not club_name:
-            await ctx.send("❌ Club name can't be empty. Run `!setup` again.")
+            await interaction.followup.send("❌ Club name can't be empty. Run `/setup` again.")
             return
 
-        channel_id = str(ctx.channel.id)
+        channel_id = str(interaction.channel_id)
 
         try:
-            existing = bot.api.get_member_by_discord_id(str(ctx.author.id))
+            existing = bot.api.get_member_by_discord_id(str(interaction.user.id))
             if existing:
                 caller = {"id": existing["id"], "name": existing["name"]}
             else:
                 created = bot.api.create_member({
-                    "name": ctx.author.display_name,
-                    "discord_id": str(ctx.author.id),
+                    "name": interaction.user.display_name,
+                    "discord_id": str(interaction.user.id),
                 })
                 member_data = created.get("member", created)
                 caller = {"id": member_data["id"], "name": member_data["name"]}
@@ -214,166 +222,171 @@ def setup_admin_commands(bot):
                 guild_id
             )
         except APIError as e:
-            await ctx.send(f"❌ Failed to create club: {e}")
+            await interaction.followup.send(f"❌ Failed to create club: {e}")
             return
 
         embed = create_embed(
             title="🎉 You're all set!",
             description=(
-                f"**{club_name}** has been created in {ctx.channel.mention}.\n\n"
+                f"**{club_name}** has been created in {interaction.channel.mention}.\n\n"
                 "**Available commands:**\n"
                 "`/session` — view the current reading session\n"
                 "`/book` — see the current book\n"
                 "`/duedate` — check the due date\n"
                 "`/discussions` — view scheduled discussions\n"
-                "`!session_create` — start a new session\n"
-                "`!member_add` — add members to the club"
+                "`/session_create` — start a new session\n"
+                "`/member_add` — add members to the club"
             ),
             color_key="success",
             footer="Happy reading! 📖"
         )
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    # ── Server commands (guild owner only) ───────────────────────────────────
+    # ── Server commands (manage_guild permission only) ────────────────────────
 
-    @bot.command(name="server_register", help="Register this Discord server with the bot")
-    async def server_register(ctx: commands.Context):
-        """
-        Registers the Discord server.
-        Usage: !server_register
-        """
-        if not _check_guild_owner(ctx):
-            await ctx.send("❌ Only the server owner can use this command.")
-            return
+    @bot.tree.command(name="server_register", description="Register this Discord server with the bot")
+    @app_commands.default_permissions(manage_guild=True)
+    async def server_register(interaction: discord.Interaction):
+        """Registers the Discord server."""
+        await interaction.response.defer()
         try:
-            bot.api.register_server(str(ctx.guild.id), ctx.guild.name)
+            bot.api.register_server(str(interaction.guild_id), interaction.guild.name)
             embed = create_embed(
                 title="✅ Server Registered",
-                description=f"**{ctx.guild.name}** has been registered.",
+                description=f"**{interaction.guild.name}** has been registered.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to register server: {e}")
+            await interaction.followup.send(f"❌ Failed to register server: {e}")
 
-    @bot.command(name="server_update", help="Update this server's registered name")
-    async def server_update(ctx: commands.Context, *, name: str):
-        """
-        Updates the server's registered name.
-        Usage: !server_update <name>
-        """
-        if not _check_guild_owner(ctx):
-            await ctx.send("❌ Only the server owner can use this command.")
-            return
+    @bot.tree.command(name="server_update", description="Update this server's registered name")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.describe(name="The new name for the server")
+    async def server_update(interaction: discord.Interaction, name: str):
+        """Updates the server's registered name."""
+        await interaction.response.defer()
         try:
-            bot.api.update_server(str(ctx.guild.id), name)
+            bot.api.update_server(str(interaction.guild_id), name)
             embed = create_embed(
                 title="✅ Server Updated",
                 description=f"Server name updated to **{name}**.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to update server: {e}")
+            await interaction.followup.send(f"❌ Failed to update server: {e}")
 
-    @bot.command(name="server_delete", help="Delete this server's registration")
-    async def server_delete(ctx: commands.Context):
-        """
-        Deletes the server registration and all associated data.
-        Usage: !server_delete
-        """
-        if not _check_guild_owner(ctx):
-            await ctx.send("❌ Only the server owner can use this command.")
-            return
+    @bot.tree.command(name="server_delete", description="Delete this server's registration and all data")
+    @app_commands.default_permissions(manage_guild=True)
+    async def server_delete(interaction: discord.Interaction):
+        """Deletes the server registration and all associated data."""
+        await interaction.response.defer()
         confirmed = await _confirm(
-            ctx,
+            interaction,
             "⚠️ This will delete **all server data** including clubs, members, and sessions. "
-            "Type `y` to confirm or anything else to cancel."
+            "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await ctx.send("Action cancelled.")
+            await interaction.followup.send("Action cancelled.")
             return
         try:
-            bot.api.delete_server(str(ctx.guild.id))
+            bot.api.delete_server(str(interaction.guild_id))
             embed = create_embed(
                 title="✅ Server Deleted",
                 description="Server registration and all associated data have been removed.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to delete server: {e}")
+            await interaction.followup.send(f"❌ Failed to delete server: {e}")
 
     # ── Club commands (club admin+) ───────────────────────────────────────────
 
-    @bot.command(name="club_create", help="Create a new book club in a channel")
-    async def club_create(ctx: commands.Context, *, args: str):
-        """
-        Creates a new book club. Caller is automatically assigned as owner.
-        Usage: !club_create <name> [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        name = re.sub(r'\s*--channel\s+\d+', '', args).strip()
+    @bot.tree.command(name="club_create", description="Create a new book club in a channel")
+    @app_commands.describe(
+        name="The name of the new club",
+        channel="The channel to create the club in (defaults to current channel)"
+    )
+    async def club_create(interaction: discord.Interaction, name: str, channel: discord.TextChannel = None):
+        """Creates a new book club. Caller is automatically assigned as owner."""
+        await interaction.response.defer()
+        channel_id = str(channel.id) if channel else str(interaction.channel_id)
+        guild_id = str(interaction.guild_id)
 
-        if not name:
-            await ctx.send("❌ Provide a club name: `!club_create <name> [--channel <id>]`")
+        if not name or not name.strip():
+            await interaction.followup.send("❌ Please provide a club name.")
             return
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
         try:
-            # Resolve or create the caller's member record so we can pass
-            # them as the first member in the club payload — the backend
-            # promotes index-0 to owner automatically.
-            existing = bot.api.get_member_by_discord_id(str(ctx.author.id))
+            existing = bot.api.get_member_by_discord_id(str(interaction.user.id))
             if existing:
                 caller = {"id": existing["id"], "name": existing["name"]}
             else:
                 created = bot.api.create_member({
-                    "name": ctx.author.display_name,
-                    "discord_id": str(ctx.author.id),
+                    "name": interaction.user.display_name,
+                    "discord_id": str(interaction.user.id),
                 })
                 member_data = created.get("member", created)
                 caller = {"id": member_data["id"], "name": member_data["name"]}
 
             bot.api.create_club(
                 {"name": name, "discord_channel": channel_id, "members": [caller]},
-                str(ctx.guild.id)
+                guild_id
             )
             embed = create_embed(
                 title="✅ Club Created",
                 description=f"Book club **{name}** created in <#{channel_id}>. You are the owner.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to create club: {e}")
+            await interaction.followup.send(f"❌ Failed to create club: {e}")
 
-    @bot.command(name="club_update", help="Update the club name or discord channel")
-    async def club_update(ctx: commands.Context, *, args: str):
-        """
-        Updates club details. Use --channel to target a club from another channel.
-        Usage: !club_update [--name <name>] [--new-channel <channel_id>] [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
-            return
-        guild_id = str(ctx.guild.id)
+    @bot.tree.command(name="club_update", description="Update the club name or discord channel")
+    @app_commands.describe(
+        name="The new club name",
+        new_channel="The new channel to move the club to",
+        channel="The channel containing the club to update (defaults to current channel)"
+    )
+    async def club_update(
+        interaction: discord.Interaction,
+        name: str = None,
+        new_channel: discord.TextChannel = None,
+        channel: discord.TextChannel = None
+    ):
+        """Updates club details."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-        if not club_data:
-            await ctx.send("❌ No book club found in that channel.")
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
+        if not club_data:
+            await interaction.followup.send("❌ No book club found in that channel.")
+            return
+
         update = {}
-        name_match = re.search(r'--name\s+(.+?)(?:\s+--|$)', args)
-        new_channel_match = re.search(r'--new-channel\s+(\d+)', args)
-        if name_match:
-            update["name"] = name_match.group(1).strip()
-        if new_channel_match:
-            update["discord_channel"] = new_channel_match.group(1).strip()
+        if name and name.strip():
+            update["name"] = name.strip()
+        if new_channel:
+            update["discord_channel"] = str(new_channel.id)
         if not update:
-            await ctx.send(
-                "❌ Provide at least `--name <name>` or `--new-channel <channel_id>`."
+            await interaction.followup.send(
+                "❌ Provide at least a new name or new channel."
             )
             return
         try:
@@ -383,32 +396,39 @@ def setup_admin_commands(bot):
                 description="Club details updated successfully.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to update club: {e}")
+            await interaction.followup.send(f"❌ Failed to update club: {e}")
 
-    @bot.command(name="club_delete", help="Delete the book club in a channel")
-    async def club_delete(ctx: commands.Context, *, args: str = ""):
-        """
-        Deletes a book club and all its data.
-        Usage: !club_delete [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
-            return
-        guild_id = str(ctx.guild.id)
+    @bot.tree.command(name="club_delete", description="Delete the book club in a channel")
+    @app_commands.describe(
+        channel="The channel containing the club to delete (defaults to current channel)"
+    )
+    async def club_delete(interaction: discord.Interaction, channel: discord.TextChannel = None):
+        """Deletes a book club and all its data."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-        if not club_data:
-            await ctx.send("❌ No book club found in that channel.")
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
+        if not club_data:
+            await interaction.followup.send("❌ No book club found in that channel.")
+            return
+
         confirmed = await _confirm(
-            ctx,
+            interaction,
             f"⚠️ This will delete **{club_data['name']}** and all its data. "
-            "Type `y` to confirm or anything else to cancel."
+            "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await ctx.send("Action cancelled.")
+            await interaction.followup.send("Action cancelled.")
             return
         try:
             bot.api.delete_club(club_data["id"], guild_id)
@@ -417,32 +437,40 @@ def setup_admin_commands(bot):
                 description=f"**{club_data['name']}** has been deleted.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to delete club: {e}")
+            await interaction.followup.send(f"❌ Failed to delete club: {e}")
 
     # ── Member commands (club admin+) ─────────────────────────────────────────
 
-    @bot.command(name="member_add", help="Add a Discord user to a book club")
-    async def member_add(ctx: commands.Context, member: discord.Member, *, args: str = ""):
-        """
-        Adds a mentioned Discord user to a club. Creates member record if needed.
-        Usage: !member_add @User [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
+    @bot.tree.command(name="member_add", description="Add a Discord user to a book club")
+    @app_commands.describe(
+        member="The member to add to the club",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def member_add(interaction: discord.Interaction, member: discord.Member, channel: discord.TextChannel = None):
+        """Adds a mentioned Discord user to a club. Creates member record if needed."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
-        club_data = bot.api.find_club_in_channel(channel_id, str(ctx.guild.id))
         if not club_data:
-            await ctx.send("❌ No book club found in that channel.")
+            await interaction.followup.send("❌ No book club found in that channel.")
             return
         try:
             existing = bot.api.get_member_by_discord_id(str(member.id))
             if existing:
                 current_club_ids = [c["id"] for c in existing.get("clubs", [])]
                 if club_data["id"] in current_club_ids:
-                    await ctx.send(f"**{member.display_name}** is already a member of this club.")
+                    await interaction.followup.send(f"**{member.display_name}** is already a member of this club.")
                     return
                 bot.api.update_member(existing["id"], {"clubs": current_club_ids + [club_data["id"]]})
             else:
@@ -456,27 +484,50 @@ def setup_admin_commands(bot):
                 description=f"**{member.display_name}** has been added to the club.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to add member: {e}")
+            await interaction.followup.send(f"❌ Failed to add member: {e}")
 
-    @bot.command(name="member_remove", help="Remove a member from a book club")
-    async def member_remove(ctx: commands.Context, member_id: int, *, args: str = ""):
-        """
-        Removes a member by their ID.
-        Usage: !member_remove <member_id> [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
+    @bot.tree.command(name="member_remove", description="Remove a member from a book club")
+    @app_commands.describe(
+        member_id="The ID of the member to remove",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def member_remove(interaction: discord.Interaction, member_id: int, channel: discord.TextChannel = None):
+        """Removes a member by their ID."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
+        if not club_data:
+            await interaction.followup.send("❌ No book club found in that channel.")
+            return
+
+        try:
+            member_data = bot.api.get_member(member_id)
+            member_club_ids = [c["id"] for c in member_data.get("clubs", [])]
+            if club_data["id"] not in member_club_ids:
+                await interaction.followup.send(f"❌ Member `{member_id}` is not in this club.")
+                return
+        except ResourceNotFoundError:
+            await interaction.followup.send(f"❌ Member `{member_id}` not found.")
+            return
+
         confirmed = await _confirm(
-            ctx,
+            interaction,
             f"⚠️ Remove member `{member_id}` from the club? "
-            "Type `y` to confirm or anything else to cancel."
+            "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await ctx.send("Action cancelled.")
+            await interaction.followup.send("Action cancelled.")
             return
         try:
             bot.api.delete_member(member_id)
@@ -485,27 +536,38 @@ def setup_admin_commands(bot):
                 description=f"Member `{member_id}` has been removed.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to remove member: {e}")
+            await interaction.followup.send(f"❌ Failed to remove member: {e}")
 
-    @bot.command(name="member_role", help="Update a member's role in a club")
-    async def member_role(ctx: commands.Context, member_id: int, role: str, *, args: str = ""):
-        """
-        Sets a member's role to admin or member.
-        Usage: !member_role <member_id> <admin|member> [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
-            return
-        if role not in ("admin", "member"):
-            await ctx.send("❌ Role must be `admin` or `member`.")
-            return
-        guild_id = str(ctx.guild.id)
+    @bot.tree.command(name="member_role", description="Update a member's role in a club")
+    @app_commands.describe(
+        member_id="The ID of the member",
+        role="The new role (admin or member)",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def member_role(
+        interaction: discord.Interaction,
+        member_id: int,
+        role: Literal["admin", "member"],
+        channel: discord.TextChannel = None
+    ):
+        """Sets a member's role to admin or member."""
+        await interaction.response.defer()
+
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
         if not club_data:
-            await ctx.send("❌ No book club found in that channel.")
+            await interaction.followup.send("❌ No book club found in that channel.")
             return
         try:
             bot.api.update_member(member_id, {"club_roles": {club_data["id"]: role}})
@@ -514,27 +576,39 @@ def setup_admin_commands(bot):
                 description=f"Member `{member_id}` is now **{role}**.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to update role: {e}")
+            await interaction.followup.send(f"❌ Failed to update role: {e}")
 
     # ── Session commands (club admin+) ────────────────────────────────────────
 
-    @bot.command(name="session_create", help="Create a new reading session")
-    async def session_create(ctx: commands.Context, book_title: str, *, author: str):
-        """
-        Creates a reading session for a club.
-        Usage: !session_create "<book title>" <author> [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, author)
-        author = re.sub(r'\s*--channel\s+\d+', '', author).strip()
+    @bot.tree.command(name="session_create", description="Create a new reading session")
+    @app_commands.describe(
+        book_title="The title of the book",
+        author="The author of the book",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def session_create(
+        interaction: discord.Interaction,
+        book_title: str,
+        author: str,
+        channel: discord.TextChannel = None
+    ):
+        """Creates a reading session for a club."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
 
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
-        club_data = bot.api.find_club_in_channel(channel_id, str(ctx.guild.id))
         if not club_data:
-            await ctx.send("❌ No book club found in that channel.")
+            await interaction.followup.send("❌ No book club found in that channel.")
             return
         try:
             bot.api.create_session({
@@ -546,39 +620,53 @@ def setup_admin_commands(bot):
                 description=f"Now reading **{book_title}** by {author}.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to create session: {e}")
+            await interaction.followup.send(f"❌ Failed to create session: {e}")
 
-    @bot.command(name="session_update", help="Update the active reading session")
-    async def session_update(ctx: commands.Context, *, args: str):
-        """
-        Updates the active session. Provide at least one flag.
-        Usage: !session_update [--due-date YYYY-MM-DD] [--book "<title>|<author>"] [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
-            return
-        guild_id = str(ctx.guild.id)
+    @bot.tree.command(name="session_update", description="Update the active reading session")
+    @app_commands.describe(
+        due_date="The new due date (YYYY-MM-DD format)",
+        book_title="The new book title",
+        book_author="The new book author",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def session_update(
+        interaction: discord.Interaction,
+        due_date: str = None,
+        book_title: str = None,
+        book_author: str = None,
+        channel: discord.TextChannel = None
+    ):
+        """Updates the active session."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-        if not club_data or not club_data.get("active_session"):
-            await ctx.send("❌ No active session found in that channel.")
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
         session_id = club_data["active_session"]["id"]
         update = {}
-        due_date_match = re.search(r'--due-date\s+(\S+)', args)
-        book_match = re.search(r'--book\s+"([^|"]+)\|([^"]+)"', args)
-        if due_date_match:
-            update["due_date"] = due_date_match.group(1)
-        if book_match:
+        if due_date and due_date.strip():
+            update["due_date"] = due_date.strip()
+        if book_title and book_author and book_title.strip() and book_author.strip():
             update["book"] = {
-                "title": book_match.group(1).strip(),
-                "author": book_match.group(2).strip()
+                "title": book_title.strip(),
+                "author": book_author.strip()
             }
         if not update:
-            await ctx.send(
-                "❌ Provide at least `--due-date YYYY-MM-DD` or `--book \"<title>|<author>\"`."
+            await interaction.followup.send(
+                "❌ Provide at least a due date or both book title and author."
             )
             return
         try:
@@ -588,33 +676,40 @@ def setup_admin_commands(bot):
                 description="Session details updated successfully.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to update session: {e}")
+            await interaction.followup.send(f"❌ Failed to update session: {e}")
 
-    @bot.command(name="session_delete", help="Delete the active reading session")
-    async def session_delete(ctx: commands.Context, *, args: str = ""):
-        """
-        Deletes the active session for a club.
-        Usage: !session_delete [--channel <channel_id>]
-        """
-        channel_id = _resolve_channel_id(ctx, args)
-        if not await _can_manage_clubs(ctx, channel_id):
-            await ctx.send("❌ You need to be a club admin or owner to use this command.")
-            return
-        guild_id = str(ctx.guild.id)
+    @bot.tree.command(name="session_delete", description="Delete the active reading session")
+    @app_commands.describe(
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def session_delete(interaction: discord.Interaction, channel: discord.TextChannel = None):
+        """Deletes the active session for a club."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-        if not club_data or not club_data.get("active_session"):
-            await ctx.send("❌ No active session found in that channel.")
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
             return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
         session_id = club_data["active_session"]["id"]
         confirmed = await _confirm(
-            ctx,
+            interaction,
             "⚠️ This will permanently delete the active reading session. "
-            "Type `y` to confirm or anything else to cancel."
+            "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await ctx.send("Action cancelled.")
+            await interaction.followup.send("Action cancelled.")
             return
         try:
             bot.api.delete_session(session_id)
@@ -623,6 +718,6 @@ def setup_admin_commands(bot):
                 description="The active reading session has been deleted.",
                 color_key="success"
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except APIError as e:
-            await ctx.send(f"❌ Failed to delete session: {e}")
+            await interaction.followup.send(f"❌ Failed to delete session: {e}")
