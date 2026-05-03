@@ -236,18 +236,34 @@ def setup_admin_commands(bot):
             return
 
         embed = create_embed(
-            title="🎉 You're all set!",
+            title="🎉 Welcome to your book club!",
             description=(
                 f"**{club_name}** has been created in {interaction.channel.mention}.\n\n"
-                "**Available commands:**\n"
-                "`/session` — view the current reading session\n"
-                "`/book` — see the current book\n"
-                "`/duedate` — check the due date\n"
-                "`/discussions` — view scheduled discussions\n"
-                "`/session_create` — start a new session\n"
-                "`/member_add` — add members to the club"
+                "Here's what to do next:"
             ),
             color_key="success",
+            fields=[
+                {
+                    "name": "📖 Owner — pick your first book",
+                    "value": "Use `/session_create` to start your first reading session and choose what the club reads.",
+                    "inline": False,
+                },
+                {
+                    "name": "👥 Everyone else — join the club",
+                    "value": "Type `/join` to get on the roster so you can track progress and participate in discussions.",
+                    "inline": False,
+                },
+                {
+                    "name": "📚 Other useful commands",
+                    "value": (
+                        "`/session` — view the current session\n"
+                        "`/book` — see the current book\n"
+                        "`/duedate` — check the due date\n"
+                        "`/discussions` — view scheduled discussions"
+                    ),
+                    "inline": False,
+                },
+            ],
             footer="Happy reading! 📖"
         )
         await interaction.followup.send(embed=embed)
