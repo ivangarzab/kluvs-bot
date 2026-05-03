@@ -12,6 +12,27 @@ from utils.embeds import create_embed
 from api.bookclub_api import APIError, ResourceNotFoundError
 
 
+async def discussion_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    """Autocomplete discussion IDs from the active session for update/delete commands."""
+    try:
+        channel_id = str(interaction.channel_id)
+        guild_id = str(interaction.guild_id)
+        club_data = interaction.client.api.find_club_in_channel(channel_id, guild_id)
+        if not club_data or not club_data.get("active_session"):
+            return []
+        session_id = club_data["active_session"]["id"]
+        session = interaction.client.api.get_session(session_id)
+        discussions = session.get("discussions", [])
+        choices = []
+        for d in discussions:
+            label = f"{d.get('title', 'Untitled')} — {d.get('date', '')}"
+            if not current or current.lower() in label.lower():
+                choices.append(app_commands.Choice(name=label[:100], value=d["id"]))
+        return choices[:25]
+    except Exception:
+        return []
+
+
 async def book_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     if len(current) < 2:
         return []
@@ -191,6 +212,15 @@ def setup_admin_commands(bot):
                         "`/session_create` — Create a reading session\n"
                         "`/session_update` — Update session\n"
                         "`/session_delete` — Delete the active session"
+                    ),
+                    "inline": False
+                },
+                {
+                    "name": "💬 Discussion Management",
+                    "value": (
+                        "`/discussion_add` — Add a discussion to the active session\n"
+                        "`/discussion_update` — Update an existing discussion\n"
+                        "`/discussion_delete` — Delete a discussion"
                     ),
                     "inline": False
                 },
@@ -823,3 +853,199 @@ def setup_admin_commands(bot):
             await interaction.followup.send(embed=embed)
         except APIError as e:
             await interaction.followup.send(f"❌ Failed to delete session: {e}")
+
+    # ── Discussion commands (club admin+) ─────────────────────────────────────
+
+    @bot.tree.command(name="discussion_add", description="Add a discussion to the active session")
+    @app_commands.describe(
+        title="Discussion title (e.g. 'Chapters 1-5')",
+        date="Discussion date (YYYY-MM-DD)",
+        location="Optional location (e.g. 'Discord', 'Library')",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_add(
+        interaction: discord.Interaction,
+        title: str,
+        date: str,
+        location: str = None,
+        channel: discord.TextChannel = None
+    ):
+        """Adds a new discussion to the active reading session."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                ephemeral=True
+            )
+            return
+
+        session_id = club_data["active_session"]["id"]
+        new_discussion = {"title": title.strip(), "date": date.strip()}
+        if location and location.strip():
+            new_discussion["location"] = location.strip()
+
+        try:
+            bot.api.update_session(session_id, {"discussions": [new_discussion]})
+            description = f"Added **{title}** on {date}"
+            if location:
+                description += f" at {location}"
+            embed = create_embed(
+                title="✅ Discussion Added",
+                description=description + ".",
+                color_key="success"
+            )
+            await interaction.followup.send(embed=embed)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to add discussion: {e}")
+
+    @bot.tree.command(name="discussion_update", description="Update an existing discussion in the active session")
+    @app_commands.autocomplete(discussion_id=discussion_autocomplete)
+    @app_commands.describe(
+        discussion_id="The discussion to update (select from autocomplete)",
+        title="New title",
+        date="New date (YYYY-MM-DD)",
+        location="New location",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_update_command(
+        interaction: discord.Interaction,
+        discussion_id: str,
+        title: str = None,
+        date: str = None,
+        location: str = None,
+        channel: discord.TextChannel = None
+    ):
+        """Updates an existing discussion in the active reading session."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        if not any([title, date, location]):
+            await interaction.followup.send(
+                "❌ Provide at least one field to update (title, date, or location)."
+            )
+            return
+
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                await interaction.followup.send(
+                    "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                    ephemeral=True
+                )
+                return
+
+        session_id = club_data["active_session"]["id"]
+        try:
+            session = bot.api.get_session(session_id)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to retrieve session: {e}")
+            return
+
+        discussions = session.get("discussions", [])
+        current = next((d for d in discussions if d["id"] == discussion_id), None)
+        if not current:
+            await interaction.followup.send("❌ Discussion not found in the active session.")
+            return
+
+        updated = {
+            "id": discussion_id,
+            "title": title.strip() if title else current["title"],
+            "date": date.strip() if date else current["date"],
+        }
+        resolved_location = location.strip() if location else current.get("location")
+        if resolved_location:
+            updated["location"] = resolved_location
+
+        try:
+            bot.api.update_session(session_id, {"discussions": [updated]})
+            description = f"Updated **{updated['title']}** on {updated['date']}"
+            if updated.get("location"):
+                description += f" at {updated['location']}"
+            embed = create_embed(
+                title="✅ Discussion Updated",
+                description=description + ".",
+                color_key="success"
+            )
+            await interaction.followup.send(embed=embed)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to update discussion: {e}")
+
+    @bot.tree.command(name="discussion_delete", description="Delete a discussion from the active session")
+    @app_commands.autocomplete(discussion_id=discussion_autocomplete)
+    @app_commands.describe(
+        discussion_id="The discussion to delete (select from autocomplete)",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_delete_command(
+        interaction: discord.Interaction,
+        discussion_id: str,
+        channel: discord.TextChannel = None
+    ):
+        """Deletes a discussion from the active reading session."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        confirmed = await _confirm(
+            interaction,
+            "⚠️ This will permanently delete the selected discussion. "
+            "Click **Confirm** to proceed or **Cancel** to abort."
+        )
+        if not confirmed:
+            await interaction.followup.send("Action cancelled.")
+            return
+
+        session_id = club_data["active_session"]["id"]
+        try:
+            bot.api.update_session(session_id, {"discussion_ids_to_delete": [discussion_id]})
+            embed = create_embed(
+                title="✅ Discussion Deleted",
+                description="The discussion has been removed from the session.",
+                color_key="success"
+            )
+            await interaction.followup.send(embed=embed)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to delete discussion: {e}")
