@@ -11,6 +11,9 @@ from discord import app_commands
 from utils.embeds import create_embed
 from api.bookclub_api import APIError, ResourceNotFoundError
 
+# Marker embedded in Discord event descriptions so discussion_sync can match them.
+_DISC_ID_RE = re.compile(r"discussion_id:(\S+)")
+
 
 async def discussion_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     """Autocomplete discussion IDs from the active session for update/delete commands."""
@@ -218,9 +221,10 @@ def setup_admin_commands(bot):
                 {
                     "name": "💬 Discussion Management",
                     "value": (
-                        "`/discussion_add` — Add a discussion to the active session\n"
+                        "`/discussion_add` — Add a discussion and create a Discord event\n"
                         "`/discussion_update` — Update an existing discussion\n"
-                        "`/discussion_delete` — Delete a discussion"
+                        "`/discussion_delete` — Delete a discussion\n"
+                        "`/discussion_sync` — Create Discord events for all discussions missing one"
                     ),
                     "inline": False
                 },
@@ -926,9 +930,27 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to add discussion: {e}")
             return
 
+        # Retrieve the server-assigned discussion ID so we can embed it in the event.
+        disc_id = None
+        try:
+            session = bot.api.get_session(session_id)
+            match = next(
+                (d for d in session.get("discussions", [])
+                 if d.get("title") == new_discussion["title"] and d.get("date") == new_discussion["date"]),
+                None
+            )
+            if match:
+                disc_id = match["id"]
+        except APIError:
+            pass  # Non-fatal — event will be created without an embedded ID
+
         # Build timezone-aware datetimes for the Discord event
         start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
         end_dt = start_dt + timedelta(hours=duration)
+
+        event_description = f"Book club discussion: {title.strip()}"
+        if disc_id:
+            event_description += f"\ndiscussion_id:{disc_id}"
 
         event_warning = ""
         try:
@@ -939,7 +961,7 @@ def setup_admin_commands(bot):
                 entity_type=discord.EntityType.external,
                 privacy_level=discord.PrivacyLevel.guild_only,
                 location=resolved_location,
-                description=f"Book club discussion: {title.strip()}",
+                description=event_description,
             )
         except discord.Forbidden:
             event_warning = "\n⚠️ Discussion saved, but couldn't create a Discord event — the bot is missing **Manage Events** permission."
@@ -1088,3 +1110,129 @@ def setup_admin_commands(bot):
             await interaction.followup.send(embed=embed)
         except APIError as e:
             await interaction.followup.send(f"❌ Failed to delete discussion: {e}")
+
+    @bot.tree.command(name="discussion_sync", description="Create Discord events for any discussions that don't have one")
+    @app_commands.describe(
+        default_time="Start time for created events in HH:MM 24h format (default: 18:00)",
+        default_duration="Duration in hours for created events (default: 1.0)",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_sync(
+        interaction: discord.Interaction,
+        default_time: str = "18:00",
+        default_duration: float = 1.0,
+        channel: discord.TextChannel = None
+    ):
+        """Ensures every discussion in the active session has a corresponding Discord scheduled event."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        try:
+            datetime.strptime(default_time, "%H:%M")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ default_time must be in **HH:MM** 24h format (e.g., `18:00`).",
+                ephemeral=True
+            )
+            return
+
+        if default_duration <= 0:
+            await interaction.followup.send(
+                "❌ default_duration must be greater than 0.",
+                ephemeral=True
+            )
+            return
+
+        session_id = club_data["active_session"]["id"]
+        try:
+            session = bot.api.get_session(session_id)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to retrieve session: {e}")
+            return
+
+        discussions = session.get("discussions", [])
+        if not discussions:
+            await interaction.followup.send("ℹ️ No discussions found in the active session.")
+            return
+
+        # Build the set of discussion IDs already covered by an existing guild event.
+        try:
+            existing_events = await interaction.guild.fetch_scheduled_events()
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ Couldn't fetch guild events — the bot is missing **Manage Events** permission."
+            )
+            return
+
+        covered_ids = set()
+        for event in existing_events:
+            m = _DISC_ID_RE.search(event.description or "")
+            if m:
+                covered_ids.add(m.group(1))
+
+        created, skipped, failed = [], [], []
+
+        for disc in discussions:
+            disc_id = disc.get("id")
+            disc_title = disc.get("title", "Untitled")
+
+            if disc_id in covered_ids:
+                skipped.append(disc_title)
+                continue
+
+            # Parse the date; skip gracefully if it's not in the expected format.
+            raw_date = disc.get("date", "")
+            try:
+                start_dt = datetime.strptime(f"{raw_date} {default_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            except ValueError:
+                failed.append(f"{disc_title} (unparseable date: {raw_date!r})")
+                continue
+
+            end_dt = start_dt + timedelta(hours=default_duration)
+            event_description = f"Book club discussion: {disc_title}"
+            if disc_id:
+                event_description += f"\ndiscussion_id:{disc_id}"
+
+            try:
+                await interaction.guild.create_scheduled_event(
+                    name=disc_title,
+                    start_time=start_dt,
+                    end_time=end_dt,
+                    entity_type=discord.EntityType.external,
+                    privacy_level=discord.PrivacyLevel.guild_only,
+                    location=disc.get("location") or "Discord",
+                    description=event_description,
+                )
+                created.append(disc_title)
+            except (discord.Forbidden, discord.HTTPException) as e:
+                failed.append(f"{disc_title} ({e})")
+
+        lines = []
+        if created:
+            lines.append(f"✅ Created {len(created)} event(s): {', '.join(f'**{t}**' for t in created)}")
+        if skipped:
+            lines.append(f"⏭️ Already had events: {', '.join(f'**{t}**' for t in skipped)}")
+        if failed:
+            lines.append(f"⚠️ Failed to create: {', '.join(failed)}")
+        if not lines:
+            lines.append("ℹ️ Nothing to sync.")
+
+        embed = create_embed(
+            title="🔄 Discussion Sync Complete",
+            description="\n".join(lines),
+            color_key="info"
+        )
+        await interaction.followup.send(embed=embed)
