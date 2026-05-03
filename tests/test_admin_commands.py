@@ -648,6 +648,93 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
         self.assertIn("❌", interaction.followup.send.call_args.args[0])
 
 
+class TestBookAutocomplete(unittest.IsolatedAsyncioTestCase):
+    async def test_book_autocomplete_success(self):
+        """Test autocomplete returns formatted choices"""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        interaction.client.api.search_books.return_value = [
+            {
+                "external_google_id": "abc123",
+                "title": "Dune",
+                "author": "Frank Herbert"
+            },
+            {
+                "external_google_id": "def456",
+                "title": "Foundation",
+                "author": "Isaac Asimov"
+            }
+        ]
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "dun")
+
+        self.assertEqual(len(choices), 2)
+        self.assertEqual(choices[0].name, "Dune — Frank Herbert")
+        self.assertEqual(choices[0].value, "abc123|Dune|Frank Herbert")
+        self.assertEqual(choices[1].name, "Foundation — Isaac Asimov")
+        self.assertEqual(choices[1].value, "def456|Foundation|Isaac Asimov")
+
+    async def test_book_autocomplete_min_query_length(self):
+        """Test autocomplete requires at least 2 characters"""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "a")
+
+        self.assertEqual(choices, [])
+        interaction.client.api.search_books.assert_not_called()
+
+    async def test_book_autocomplete_api_error(self):
+        """Test autocomplete returns empty list on API error"""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        interaction.client.api.search_books.side_effect = APIError("Connection failed")
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "dune")
+
+        self.assertEqual(choices, [])
+
+    async def test_book_autocomplete_max_25_results(self):
+        """Test autocomplete caps at 25 results"""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        # Return 30 books
+        books = [{"external_google_id": f"id{i}", "title": f"Book {i}", "author": f"Author {i}"} for i in range(30)]
+        interaction.client.api.search_books.return_value = books
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "book")
+
+        self.assertEqual(len(choices), 25)
+
+    async def test_book_autocomplete_value_truncation(self):
+        """Test autocomplete value is truncated if needed for Discord's 100-char limit"""
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.api = AsyncMock()
+        # Long title and author that would exceed 100 chars
+        interaction.client.api.search_books.return_value = [
+            {
+                "external_google_id": "short_id",
+                "title": "A" * 80,  # Very long title
+                "author": "B" * 40  # Long author
+            }
+        ]
+
+        from cogs.admin_commands import book_autocomplete
+        choices = await book_autocomplete(interaction, "test")
+
+        self.assertEqual(len(choices), 1)
+        self.assertLessEqual(len(choices[0].value), 100)
+
+
 class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.bot, self.commands = _make_bot()
@@ -656,22 +743,30 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
     async def test_session_create_success(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
+        self.bot.api.register_book = AsyncMock(return_value={"id": 42, "title": "Dune", "author": "Frank Herbert"})
         self.bot.api.create_session.return_value = {"success": True}
         await self.commands["session_create"]["func"](
             interaction,
-            book_title="Dune",
-            author="Frank Herbert"
+            book="gid-123|Dune|Frank Herbert",
+            start_date="2026-05-15",
+            end_date="2026-06-15"
         )
+        self.bot.api.register_book.assert_called_once_with("Dune", "Frank Herbert", external_google_id="gid-123")
         self.bot.api.create_session.assert_called_once_with({
             "club_id": "club-1",
-            "book": {"title": "Dune", "author": "Frank Herbert"},
+            "book_id": 42,
+            "start_date": "2026-05-15",
+            "end_date": "2026-06-15",
         })
 
     async def test_session_create_permission_denied(self):
         interaction = _make_interaction(user_id="999", is_owner=False)
-        self.bot.api.find_club_in_channel.return_value = None
+        self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["session_create"]["func"](
-            interaction, book_title="Dune", author="Herbert"
+            interaction,
+            book="gid-123|Dune|Herbert",
+            start_date="2026-05-15",
+            end_date="2026-06-15"
         )
         self.assertIn("❌", interaction.followup.send.call_args.args[0])
         self.bot.api.create_session.assert_not_called()
@@ -679,22 +774,63 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
     async def test_session_create_no_club(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = None
-        await self.commands["session_create"]["func"](
-            interaction, book_title="Dune", author="Herbert"
-        )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        with self.assertRaises(APIError):
+            await self.commands["session_create"]["func"](
+                interaction,
+                book="gid-123|Dune|Herbert",
+                start_date="2026-05-15",
+                end_date="2026-06-15"
+            )
         self.bot.api.create_session.assert_not_called()
 
     async def test_session_create_api_error(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
+        self.bot.api.register_book = AsyncMock(return_value={"id": 42, "title": "Dune", "author": "Frank Herbert"})
         self.bot.api.create_session.side_effect = APIError("failed")
+        with self.assertRaises(APIError):
+            await self.commands["session_create"]["func"](
+                interaction,
+                book="gid-123|Dune|Frank Herbert",
+                start_date="2026-05-15",
+                end_date="2026-06-15"
+            )
+
+    async def test_session_create_invalid_date_format(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["session_create"]["func"](
             interaction,
-            book_title="Dune",
-            author="Frank Herbert"
+            book="gid-123|Dune|Frank Herbert",
+            start_date="2026/05/15",  # Wrong format
+            end_date="2026-06-15"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.assertIn("❌ Dates must be in **YYYY-MM-DD** format", interaction.followup.send.call_args.args[0])
+        self.bot.api.create_session.assert_not_called()
+
+    async def test_session_create_start_after_end(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = self.club
+        await self.commands["session_create"]["func"](
+            interaction,
+            book="gid-123|Dune|Frank Herbert",
+            start_date="2026-06-15",
+            end_date="2026-05-15"  # End before start
+        )
+        self.assertIn("❌ Start date must be before end date", interaction.followup.send.call_args.args[0])
+        self.bot.api.create_session.assert_not_called()
+
+    async def test_session_create_invalid_book_format(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = self.club
+        await self.commands["session_create"]["func"](
+            interaction,
+            book="invalid",  # Missing pipes
+            start_date="2026-05-15",
+            end_date="2026-06-15"
+        )
+        self.assertIn("❌ Invalid book selection", interaction.followup.send.call_args.args[0])
+        self.bot.api.create_session.assert_not_called()
 
     async def test_session_update_due_date(self):
         interaction = _make_interaction(user_id="111")

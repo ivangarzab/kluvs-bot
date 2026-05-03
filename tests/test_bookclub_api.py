@@ -719,6 +719,122 @@ class TestBookClubAPI(unittest.TestCase):
             params={"id": self.test_guild_id}
         )
 
+    # Book endpoint tests
+    @patch('requests.get')
+    def test_search_books_success(self, mock_get):
+        """Test search_books with valid query."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "books": [
+                {
+                    "external_google_id": "abc123",
+                    "title": "Dune",
+                    "author": "Frank Herbert",
+                    "year": 1965
+                },
+                {
+                    "external_google_id": "def456",
+                    "title": "Foundation",
+                    "author": "Isaac Asimov",
+                    "year": 1951
+                }
+            ],
+            "total": 2
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        result = self.api._search_books_sync("dune")
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["title"], "Dune")
+        self.assertEqual(result[0]["external_google_id"], "abc123")
+        mock_get.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/book",
+            headers=self.api.headers,
+            params={"q": "dune"}
+        )
+
+    def test_search_books_min_query_length(self):
+        """Test search_books returns empty list for short query."""
+        result = self.api._search_books_sync("a")
+        self.assertEqual(result, [])
+
+    @patch('requests.post')
+    def test_register_book_success(self, mock_post):
+        """Test register_book creates a new book."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Book registered successfully",
+            "book": {
+                "id": 42,
+                "title": "Dune",
+                "author": "Frank Herbert",
+                "external_google_id": "abc123",
+                "year": 1965
+            },
+            "created": True
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        result = self.api._register_book_sync("Dune", "Frank Herbert", "abc123")
+
+        self.assertEqual(result["id"], 42)
+        self.assertEqual(result["title"], "Dune")
+        mock_post.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/book",
+            headers=self.api.headers,
+            json={"title": "Dune", "author": "Frank Herbert", "external_google_id": "abc123"}
+        )
+
+    @patch('requests.post')
+    def test_register_book_idempotent(self, mock_post):
+        """Test register_book returns existing book if google_id exists."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Book already registered",
+            "book": {
+                "id": 42,
+                "title": "Dune",
+                "author": "Frank Herbert",
+                "external_google_id": "abc123"
+            },
+            "created": False
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        result = self.api._register_book_sync("Dune", "Frank Herbert", "abc123")
+
+        self.assertEqual(result["id"], 42)
+        self.assertFalse(result.get("created", False))
+
+    @patch('requests.post')
+    def test_register_book_no_google_id(self, mock_post):
+        """Test register_book without external_google_id."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Book registered successfully",
+            "book": {"id": 43, "title": "Foundation", "author": "Asimov"},
+            "created": True
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        result = self.api._register_book_sync("Foundation", "Asimov")
+
+        self.assertEqual(result["id"], 43)
+        mock_post.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/book",
+            headers=self.api.headers,
+            json={"title": "Foundation", "author": "Asimov"}
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
