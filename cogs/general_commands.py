@@ -50,7 +50,7 @@ class BugReportModal(discord.ui.Modal, title='Report a Bug'):
             view.add_item(discord.ui.Button(label="Go to #bug-reports", url=channel_url))
 
         await interaction.response.send_message(
-            "✅ Your bug report has been posted! Feel free to follow up there.",
+            "✅ Your bug report has been posted! Feel free to follow up in the Community Server.",
             view=view,
             ephemeral=True
         )
@@ -71,7 +71,7 @@ class FeedbackModal(discord.ui.Modal, title='Send Feedback'):
 
     async def on_submit(self, interaction: discord.Interaction):
         embed = create_embed(
-            title=f"💬 Feedback: {self.topic.value}",
+            title=f"📫 Feedback: {self.topic.value}",
             description=self.feedback.value,
             color_key="info"
         )
@@ -97,7 +97,7 @@ class FeedbackModal(discord.ui.Modal, title='Send Feedback'):
             view.add_item(discord.ui.Button(label="Go to #feedback", url=channel_url))
 
         await interaction.response.send_message(
-            "✅ Your feedback has been posted! Feel free to follow up there.",
+            "✅ Your feedback has been posted! Feel free to follow up  in the Community Server.",
             view=view,
             ephemeral=True
         )
