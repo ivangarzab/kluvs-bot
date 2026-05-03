@@ -3,13 +3,37 @@ Admin commands (version, server, club, member, session management)
 """
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Literal
 import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
 from api.bookclub_api import APIError, ResourceNotFoundError
+
+# Marker embedded in Discord event descriptions so discussion_sync can match them.
+_DISC_ID_RE = re.compile(r"discussion_id:(\S+)")
+
+
+async def discussion_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    """Autocomplete discussion IDs from the active session for update/delete commands."""
+    try:
+        channel_id = str(interaction.channel_id)
+        guild_id = str(interaction.guild_id)
+        club_data = interaction.client.api.find_club_in_channel(channel_id, guild_id)
+        if not club_data or not club_data.get("active_session"):
+            return []
+        session_id = club_data["active_session"]["id"]
+        session = interaction.client.api.get_session(session_id)
+        discussions = session.get("discussions", [])
+        choices = []
+        for d in discussions:
+            label = f"{d.get('title', 'Untitled')} — {d.get('date', '')}"
+            if not current or current.lower() in label.lower():
+                choices.append(app_commands.Choice(name=label[:100], value=d["id"]))
+        return choices[:25]
+    except Exception:
+        return []
 
 
 async def book_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
@@ -191,6 +215,16 @@ def setup_admin_commands(bot):
                         "`/session_create` — Create a reading session\n"
                         "`/session_update` — Update session\n"
                         "`/session_delete` — Delete the active session"
+                    ),
+                    "inline": False
+                },
+                {
+                    "name": "💬 Discussion Management",
+                    "value": (
+                        "`/discussion_add` — Add a discussion and create a Discord event\n"
+                        "`/discussion_update` — Update an existing discussion\n"
+                        "`/discussion_delete` — Delete a discussion\n"
+                        "`/discussion_sync` — Create Discord events for all discussions missing one"
                     ),
                     "inline": False
                 },
@@ -823,3 +857,382 @@ def setup_admin_commands(bot):
             await interaction.followup.send(embed=embed)
         except APIError as e:
             await interaction.followup.send(f"❌ Failed to delete session: {e}")
+
+    # ── Discussion commands (club admin+) ─────────────────────────────────────
+
+    @bot.tree.command(name="discussion_add", description="Add a discussion to the active session")
+    @app_commands.describe(
+        title="Discussion title (e.g. 'Chapters 1-5')",
+        date="Discussion date (YYYY-MM-DD)",
+        time="Discussion start time in 24h format (HH:MM, e.g. 18:00)",
+        duration="Duration in hours (default: 1)",
+        location="Location (default: Discord)",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_add(
+        interaction: discord.Interaction,
+        title: str,
+        date: str,
+        time: str,
+        duration: float = 1.0,
+        location: str = "Discord",
+        channel: discord.TextChannel = None
+    ):
+        """Adds a new discussion to the active reading session and creates a Discord scheduled event."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                ephemeral=True
+            )
+            return
+
+        try:
+            datetime.strptime(time, "%H:%M")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Time must be in **HH:MM** 24h format (e.g., `18:00`).",
+                ephemeral=True
+            )
+            return
+
+        if duration <= 0:
+            await interaction.followup.send(
+                "❌ Duration must be greater than 0.",
+                ephemeral=True
+            )
+            return
+
+        session_id = club_data["active_session"]["id"]
+        resolved_location = location.strip() if location and location.strip() else "Discord"
+        new_discussion = {"title": title.strip(), "date": date.strip(), "location": resolved_location}
+
+        try:
+            bot.api.update_session(session_id, {"discussions": [new_discussion]})
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to add discussion: {e}")
+            return
+
+        # Retrieve the server-assigned discussion ID so we can embed it in the event.
+        disc_id = None
+        try:
+            session = bot.api.get_session(session_id)
+            match = next(
+                (d for d in session.get("discussions", [])
+                 if d.get("title") == new_discussion["title"] and d.get("date") == new_discussion["date"]),
+                None
+            )
+            if match:
+                disc_id = match["id"]
+        except APIError:
+            pass  # Non-fatal — event will be created without an embedded ID
+
+        # Build timezone-aware datetimes for the Discord event
+        start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        end_dt = start_dt + timedelta(hours=duration)
+
+        event_description = f"Book club discussion: {title.strip()}"
+        if disc_id:
+            event_description += f"\ndiscussion_id:{disc_id}"
+
+        event_warning = ""
+        try:
+            await interaction.guild.create_scheduled_event(
+                name=title.strip(),
+                start_time=start_dt,
+                end_time=end_dt,
+                entity_type=discord.EntityType.external,
+                privacy_level=discord.PrivacyLevel.guild_only,
+                location=resolved_location,
+                description=event_description,
+            )
+        except discord.Forbidden:
+            event_warning = "\n⚠️ Discussion saved, but couldn't create a Discord event — the bot is missing **Manage Events** permission."
+        except discord.HTTPException as e:
+            event_warning = f"\n⚠️ Discussion saved, but Discord event creation failed: {e}"
+
+        description = f"Added **{title}** on {date} at {time} ({resolved_location})"
+        embed = create_embed(
+            title="✅ Discussion Added",
+            description=description + "." + event_warning,
+            color_key="success"
+        )
+        await interaction.followup.send(embed=embed)
+
+    @bot.tree.command(name="discussion_update", description="Update an existing discussion in the active session")
+    @app_commands.autocomplete(discussion_id=discussion_autocomplete)
+    @app_commands.describe(
+        discussion_id="The discussion to update (select from autocomplete)",
+        title="New title",
+        date="New date (YYYY-MM-DD)",
+        location="New location",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_update_command(
+        interaction: discord.Interaction,
+        discussion_id: str,
+        title: str = None,
+        date: str = None,
+        location: str = None,
+        channel: discord.TextChannel = None
+    ):
+        """Updates an existing discussion in the active reading session."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        if not any([title, date, location]):
+            await interaction.followup.send(
+                "❌ Provide at least one field to update (title, date, or location)."
+            )
+            return
+
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                await interaction.followup.send(
+                    "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                    ephemeral=True
+                )
+                return
+
+        session_id = club_data["active_session"]["id"]
+        try:
+            session = bot.api.get_session(session_id)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to retrieve session: {e}")
+            return
+
+        discussions = session.get("discussions", [])
+        current = next((d for d in discussions if d["id"] == discussion_id), None)
+        if not current:
+            await interaction.followup.send("❌ Discussion not found in the active session.")
+            return
+
+        updated = {
+            "id": discussion_id,
+            "title": title.strip() if title else current["title"],
+            "date": date.strip() if date else current["date"],
+        }
+        resolved_location = location.strip() if location else current.get("location")
+        if resolved_location:
+            updated["location"] = resolved_location
+
+        try:
+            bot.api.update_session(session_id, {"discussions": [updated]})
+            description = f"Updated **{updated['title']}** on {updated['date']}"
+            if updated.get("location"):
+                description += f" at {updated['location']}"
+            embed = create_embed(
+                title="✅ Discussion Updated",
+                description=description + ".",
+                color_key="success"
+            )
+            await interaction.followup.send(embed=embed)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to update discussion: {e}")
+
+    @bot.tree.command(name="discussion_delete", description="Delete a discussion from the active session")
+    @app_commands.autocomplete(discussion_id=discussion_autocomplete)
+    @app_commands.describe(
+        discussion_id="The discussion to delete (select from autocomplete)",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_delete_command(
+        interaction: discord.Interaction,
+        discussion_id: str,
+        channel: discord.TextChannel = None
+    ):
+        """Deletes a discussion from the active reading session."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        confirmed = await _confirm(
+            interaction,
+            "⚠️ This will permanently delete the selected discussion. "
+            "Click **Confirm** to proceed or **Cancel** to abort."
+        )
+        if not confirmed:
+            await interaction.followup.send("Action cancelled.")
+            return
+
+        session_id = club_data["active_session"]["id"]
+        try:
+            bot.api.update_session(session_id, {"discussion_ids_to_delete": [discussion_id]})
+            embed = create_embed(
+                title="✅ Discussion Deleted",
+                description="The discussion has been removed from the session.",
+                color_key="success"
+            )
+            await interaction.followup.send(embed=embed)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to delete discussion: {e}")
+
+    @bot.tree.command(name="discussion_sync", description="Create Discord events for any discussions that don't have one")
+    @app_commands.describe(
+        default_time="Start time for created events in HH:MM 24h format (default: 18:00)",
+        default_duration="Duration in hours for created events (default: 1.0)",
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def discussion_sync(
+        interaction: discord.Interaction,
+        default_time: str = "18:00",
+        default_duration: float = 1.0,
+        channel: discord.TextChannel = None
+    ):
+        """Ensures every discussion in the active session has a corresponding Discord scheduled event."""
+        await interaction.response.defer()
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not _can_manage_clubs(interaction, club_data):
+            await interaction.followup.send(
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+        if not club_data or not club_data.get("active_session"):
+            await interaction.followup.send("❌ No active session found in that channel.")
+            return
+
+        try:
+            datetime.strptime(default_time, "%H:%M")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ default_time must be in **HH:MM** 24h format (e.g., `18:00`).",
+                ephemeral=True
+            )
+            return
+
+        if default_duration <= 0:
+            await interaction.followup.send(
+                "❌ default_duration must be greater than 0.",
+                ephemeral=True
+            )
+            return
+
+        session_id = club_data["active_session"]["id"]
+        try:
+            session = bot.api.get_session(session_id)
+        except APIError as e:
+            await interaction.followup.send(f"❌ Failed to retrieve session: {e}")
+            return
+
+        discussions = session.get("discussions", [])
+        if not discussions:
+            await interaction.followup.send("ℹ️ No discussions found in the active session.")
+            return
+
+        # Build the set of discussion IDs already covered by an existing guild event.
+        try:
+            existing_events = await interaction.guild.fetch_scheduled_events()
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ Couldn't fetch guild events — the bot is missing **Manage Events** permission."
+            )
+            return
+
+        covered_ids = set()
+        for event in existing_events:
+            m = _DISC_ID_RE.search(event.description or "")
+            if m:
+                covered_ids.add(m.group(1))
+
+        created, skipped, failed = [], [], []
+
+        for disc in discussions:
+            disc_id = disc.get("id")
+            disc_title = disc.get("title", "Untitled")
+
+            if disc_id in covered_ids:
+                skipped.append(disc_title)
+                continue
+
+            # Parse the date; skip gracefully if it's not in the expected format.
+            raw_date = disc.get("date", "")
+            try:
+                start_dt = datetime.strptime(f"{raw_date} {default_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            except ValueError:
+                failed.append(f"{disc_title} (unparseable date: {raw_date!r})")
+                continue
+
+            end_dt = start_dt + timedelta(hours=default_duration)
+            event_description = f"Book club discussion: {disc_title}"
+            if disc_id:
+                event_description += f"\ndiscussion_id:{disc_id}"
+
+            try:
+                await interaction.guild.create_scheduled_event(
+                    name=disc_title,
+                    start_time=start_dt,
+                    end_time=end_dt,
+                    entity_type=discord.EntityType.external,
+                    privacy_level=discord.PrivacyLevel.guild_only,
+                    location=disc.get("location") or "Discord",
+                    description=event_description,
+                )
+                created.append(disc_title)
+            except (discord.Forbidden, discord.HTTPException) as e:
+                failed.append(f"{disc_title} ({e})")
+
+        lines = []
+        if created:
+            lines.append(f"✅ Created {len(created)} event(s): {', '.join(f'**{t}**' for t in created)}")
+        if skipped:
+            lines.append(f"⏭️ Already had events: {', '.join(f'**{t}**' for t in skipped)}")
+        if failed:
+            lines.append(f"⚠️ Failed to create: {', '.join(failed)}")
+        if not lines:
+            lines.append("ℹ️ Nothing to sync.")
+
+        embed = create_embed(
+            title="🔄 Discussion Sync Complete",
+            description="\n".join(lines),
+            color_key="info"
+        )
+        await interaction.followup.send(embed=embed)
