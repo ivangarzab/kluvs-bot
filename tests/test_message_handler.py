@@ -236,7 +236,7 @@ class TestMessageHandler(unittest.IsolatedAsyncioTestCase):
         _, kwargs = system_channel.send.call_args
         self.assertIn('embed', kwargs)
         embed = kwargs['embed']
-        self.assertIn("Quill", embed.title)
+        self.assertIn("Kluvs", embed.title)
         self.assertIn("!setup", embed.description)
 
     async def test_on_guild_join_falls_back_to_first_writable_channel(self):

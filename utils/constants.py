@@ -23,7 +23,7 @@ COLORS = {
 }
 
 # Message templates
-GREETINGS = ['I am Quill', '👀', 'Let\'s get reading!']
+GREETINGS = ['I am Kluvs', '👀', 'Let\'s get reading!']
 REACTIONS = ['⚡️', '👽', '🍄', '🌙', '🔥', '👾', '🦉', '🐺', '🍁']
 
 # Daily reading reminders

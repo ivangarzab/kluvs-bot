@@ -7,7 +7,7 @@ PYTHON = $(VENV)/bin/python3
 PIP = $(VENV)/bin/pip
 
 help:
-	@echo "--- Quill the Librarian: Command Shortcuts ---"
+	@echo "--- Kluvs the Librarian: Command Shortcuts ---"
 	@echo "install        : Create venv and install all dependencies"
 	@echo "test           : Run tests using venv (Matches VS Code)"
 	@echo "coverage       : Run tests with terminal coverage report"

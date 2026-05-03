@@ -69,7 +69,7 @@ class TestGeneralCommandsComprehensive(unittest.IsolatedAsyncioTestCase):
         embed = call_args.kwargs['embed']
 
         # Verify embed properties
-        self.assertIn("Quill's Orientation", embed.title)
+        self.assertIn("Kluvs Orientation", embed.title)
         self.assertIn("book club", embed.description)
 
     async def test_usage_command(self):
@@ -102,7 +102,7 @@ class TestGeneralCommandsComprehensive(unittest.IsolatedAsyncioTestCase):
         embed = call_args.kwargs['embed']
 
         # Verify embed properties
-        self.assertIn("Quill's Commands", embed.title)
+        self.assertIn("Kluvs Commands", embed.title)
         self.assertIn("commands available", embed.description)
 
     async def test_help_command_has_reading_commands(self):

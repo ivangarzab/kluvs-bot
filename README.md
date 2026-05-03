@@ -62,7 +62,7 @@ A focused Discord bot for managing book clubs with session tracking, member mana
 ## Quick Start
 
 ### Invite to Server
-[Click to invite Quill](https://discord.com/oauth2/authorize?client_id=1327910712454152275)
+[Click to invite Kluvs bot](https://discord.com/oauth2/authorize?client_id=1327910712454152275)
 
 ### Local Development
 

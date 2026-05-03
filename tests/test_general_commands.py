@@ -57,7 +57,7 @@ class TestGeneralCommands(unittest.IsolatedAsyncioTestCase):
         # Verify the embed was created with the right parameters
         mock_create_embed.assert_called_once()
         args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "🦉 Quill's Orientation")
+        self.assertEqual(kwargs['title'], "🦉 Kluvs Orientation")
         self.assertIn("Welcome to Kluvs", kwargs['description'])
         self.assertEqual(kwargs['color_key'], "info")
         
@@ -85,7 +85,7 @@ class TestGeneralCommands(unittest.IsolatedAsyncioTestCase):
         # Verify the embed was created with the right parameters
         mock_create_embed.assert_called_once()
         args, kwargs = mock_create_embed.call_args
-        self.assertEqual(kwargs['title'], "📚 Quill's Commands")
+        self.assertEqual(kwargs['title'], "📚 Kluvs Commands")
         self.assertIn("Here are all the commands", kwargs['description'])
         self.assertEqual(kwargs['color_key'], "info")
         

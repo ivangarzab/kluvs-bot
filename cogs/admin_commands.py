@@ -85,7 +85,7 @@ def setup_admin_commands(bot):
             if version_match:
                 v = version_match.group(1)
                 embed = create_embed(
-                    title=f"📚 Quill Bot version: v{v}",
+                    title=f"📚 Kluvs Bot version: v{v}",
                     color_key="blank",
                     timestamp=True
                 )

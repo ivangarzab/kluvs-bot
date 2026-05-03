@@ -52,7 +52,7 @@ def setup_message_handlers(bot):
             print(f"[WARN] No writable channel found in guild {guild.id}")
             return
         embed = create_embed(
-            title="📚 Hi! I'm Quill, your book club librarian!",
+            title="📚 Hi! I'm Kluvs, your book club keeper!",
             description=(
                 "I help book clubs manage reading sessions, track members, and keep discussions organized.\n\n"
                 "**To get started**, run `!setup` in your book club channel and I'll walk you through everything."
