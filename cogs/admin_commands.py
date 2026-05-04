@@ -922,7 +922,7 @@ def setup_admin_commands(bot):
 
         session_id = club_data["active_session"]["id"]
         resolved_location = location.strip() if location and location.strip() else "Discord"
-        new_discussion = {"title": title.strip(), "date": date.strip(), "location": resolved_location}
+        new_discussion = {"title": title.strip(), "date": date.strip(), "time": f"{time.strip()}:00", "location": resolved_location}
 
         try:
             bot.api.update_session(session_id, {"discussions": [new_discussion]})

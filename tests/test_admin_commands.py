@@ -1099,7 +1099,7 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
             interaction, title="Chapters 1-5", date="2026-06-01", time="18:00"
         )
         self.bot.api.update_session.assert_called_once_with(
-            "sess-1", {"discussions": [{"title": "Chapters 1-5", "date": "2026-06-01", "location": "Discord"}]}
+            "sess-1", {"discussions": [{"title": "Chapters 1-5", "date": "2026-06-01", "time": "18:00:00", "location": "Discord"}]}
         )
         interaction.guild.create_scheduled_event.assert_called_once()
         call_kwargs = interaction.guild.create_scheduled_event.call_args.kwargs
@@ -1144,7 +1144,7 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
             interaction, title="Intro", date="2026-06-01", time="19:00", location="Library"
         )
         self.bot.api.update_session.assert_called_once_with(
-            "sess-1", {"discussions": [{"title": "Intro", "date": "2026-06-01", "location": "Library"}]}
+            "sess-1", {"discussions": [{"title": "Intro", "date": "2026-06-01", "time": "19:00:00", "location": "Library"}]}
         )
         call_kwargs = interaction.guild.create_scheduled_event.call_args.kwargs
         self.assertEqual(call_kwargs["location"], "Library")
