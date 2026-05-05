@@ -38,6 +38,7 @@ class TestGeneralCommands(unittest.IsolatedAsyncioTestCase):
         # Verify commands were registered
         self.assertIn('help', self.commands)
         self.assertIn('usage', self.commands)
+        self.assertIn('vote', self.commands)
 
     @patch('cogs.general_commands.create_embed')
     async def test_help_command(self, mock_create_embed):
@@ -97,6 +98,28 @@ class TestGeneralCommands(unittest.IsolatedAsyncioTestCase):
         
         # Verify the interaction response was sent
         interaction.response.send_message.assert_called_once_with(embed=mock_embed)
+
+    @patch('cogs.general_commands.create_embed')
+    async def test_vote_command(self, mock_create_embed):
+        """Test the vote command"""
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        mock_embed = MagicMock()
+        mock_create_embed.return_value = mock_embed
+
+        vote_command = self.commands['vote']['func']
+        await vote_command(interaction)
+
+        mock_create_embed.assert_called_once()
+        _, kwargs = mock_create_embed.call_args
+        self.assertEqual(kwargs['title'], "🗳️ Vote for Kluvs")
+        self.assertEqual(kwargs['color_key'], "royal")
+
+        call_args = interaction.response.send_message.call_args
+        self.assertEqual(call_args.kwargs['embed'], mock_embed)
+        self.assertIsNotNone(call_args.kwargs['view'])
+        self.assertTrue(call_args.kwargs['ephemeral'])
 
 if __name__ == '__main__':
     unittest.main()

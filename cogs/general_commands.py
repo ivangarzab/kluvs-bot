@@ -6,6 +6,7 @@ import os
 import aiohttp
 import discord
 
+from utils.constants import BOT_ID
 from utils.embeds import create_embed
 
 
@@ -189,6 +190,17 @@ def setup_general_commands(bot):
         )
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="Buy Me a Coffee", url="https://buymeacoffee.com/kluvs"))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @bot.tree.command(name="vote", description="Vote for Kluvs on top.gg")
+    async def vote_command(interaction: discord.Interaction):
+        embed = create_embed(
+            title="🗳️ Vote for Kluvs",
+            description="Love using Kluvs? Show your support by voting for us on top.gg!\n\nYour vote helps more book clubs discover Kluvs. Thank you! 📚",
+            color_key="royal"
+        )
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Vote on top.gg", url=f"https://top.gg/bot/{BOT_ID}"))
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @bot.tree.command(name="bug", description="Report a bug to the Kluvs team")

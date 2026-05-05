@@ -3,6 +3,9 @@ Constants used throughout the bot
 """
 from discord import Color
 
+# Bot identity
+BOT_ID = "1327360422294192199"
+
 # Config variables
 SCHEDULED_MESSAGE_HOUR = 17  # Hour to send sceheduled message
 SCHEDULED_MESSAGE_PERCENTAGE = 0.25  # Chance to send scheduled messages
