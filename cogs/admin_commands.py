@@ -130,6 +130,7 @@ def setup_admin_commands(bot):
     # ── Version ──────────────────────────────────────────────────────────────
 
     @bot.tree.command(name="version", description="Shows the current version of the bot")
+    @app_commands.guild_only()
     async def version(interaction: discord.Interaction):
         """Extracts and displays the current version from setup.py"""
         try:
@@ -164,6 +165,8 @@ def setup_admin_commands(bot):
     # ── Admin Help (guild owner or club admin+) ──────────────────────────────
 
     @bot.tree.command(name="admin_help", description="Show admin command reference")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     async def admin_help(interaction: discord.Interaction):
         """Display admin command reference for guild owners and club admins."""
         if not _check_guild_admin(interaction):
@@ -242,44 +245,40 @@ def setup_admin_commands(bot):
 
     @bot.tree.command(name="setup", description="First-run wizard: register server and create a book club")
     @app_commands.default_permissions(manage_guild=True)
-    async def setup(interaction: discord.Interaction):
+    @app_commands.guild_only()
+    @app_commands.describe(club_name="Name for your new book club")
+    async def setup(interaction: discord.Interaction, club_name: str):
         """Guided onboarding for new servers."""
         await interaction.response.defer()
         guild_id = str(interaction.guild_id)
+        channel_id = str(interaction.channel_id)
+
+        # Fail fast: check if a club already exists in this channel before doing anything
+        if bot.api.find_club_in_channel(channel_id, guild_id):
+            embed = create_embed(
+                title="❌ Club Already Exists",
+                description=(
+                    "This channel is already hosting a book club. "
+                    "Please use a different channel or delete the existing club first."
+                ),
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
 
         try:
             bot.api.register_server(guild_id, interaction.guild.name)
         except APIError as e:
             if "already" in str(e).lower() or "duplicate" in str(e).lower():
-                await interaction.followup.send("ℹ️ This server is already registered. Continuing to club setup…")
+                pass  # Server already registered — continue to club creation
             else:
-                await interaction.followup.send(f"❌ Failed to register server: {e}")
+                embed = create_embed(
+                    title="❌ Setup Failed",
+                    description=f"Failed to register server: {e}",
+                    color_key="error"
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-
-        await interaction.followup.send("✅ Server registered! What should I call your book club?")
-
-        def check(m):
-            return m.author == interaction.user and m.channel == interaction.channel
-
-        try:
-            msg = await bot.wait_for("message", timeout=60.0, check=check)
-        except TimeoutError:
-            await interaction.followup.send("⏰ Setup timed out. Run `/setup` again when you're ready.")
-            return
-
-        club_name = msg.content.strip()
-        if not club_name:
-            await interaction.followup.send("❌ Club name can't be empty. Run `/setup` again.")
-            return
-
-        channel_id = str(interaction.channel_id)
-
-        if bot.api.find_club_in_channel(channel_id, guild_id):
-            await interaction.followup.send(
-                "❌ This channel is already hosting a book club. "
-                "Please use a different channel or delete the existing club first."
-            )
-            return
 
         try:
             existing = bot.api.get_member_by_discord_id(str(interaction.user.id))
@@ -289,16 +288,27 @@ def setup_admin_commands(bot):
                 created = bot.api.create_member({
                     "name": interaction.user.display_name,
                     "discord_id": str(interaction.user.id),
+                    "avatar_url": str(interaction.user.display_avatar.url),
                 })
                 member_data = created.get("member", created)
                 caller = {"id": member_data["id"], "name": member_data["name"]}
 
             bot.api.create_club(
-                {"name": club_name, "discord_channel": channel_id, "members": [caller]},
+                {
+                    "name": club_name,
+                    "discord_channel": channel_id,
+                    "founded_date": datetime.now().strftime("%Y-%m-%d"),
+                    "members": [caller],
+                },
                 guild_id
             )
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to create club: {e}")
+            embed = create_embed(
+                title="❌ Setup Failed",
+                description=f"Failed to create club: {e}",
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         embed = create_embed(
@@ -310,7 +320,7 @@ def setup_admin_commands(bot):
             color_key="success",
             fields=[
                 {
-                    "name": "📖 Owner — pick your first book",
+                    "name": "📖 Admin — pick your first book",
                     "value": "Use `/session_create` to start your first reading session and choose what the club reads.",
                     "inline": False,
                 },
@@ -339,6 +349,7 @@ def setup_admin_commands(bot):
 
     @bot.tree.command(name="server_register", description="Register this Discord server with the bot")
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     async def server_register(interaction: discord.Interaction):
         """Registers the Discord server."""
         await interaction.response.defer()
@@ -355,6 +366,7 @@ def setup_admin_commands(bot):
 
     @bot.tree.command(name="server_update", description="Update this server's registered name")
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(name="The new name for the server")
     async def server_update(interaction: discord.Interaction, name: str):
         """Updates the server's registered name."""
@@ -372,6 +384,7 @@ def setup_admin_commands(bot):
 
     @bot.tree.command(name="server_delete", description="Delete this server's registration and all data")
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     async def server_delete(interaction: discord.Interaction):
         """Deletes the server registration and all associated data."""
         await interaction.response.defer()
@@ -381,7 +394,12 @@ def setup_admin_commands(bot):
             "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await interaction.followup.send("Action cancelled.")
+            embed = create_embed(
+                title="❌ Action Cancelled",
+                description="No changes were made.",
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         try:
             bot.api.delete_server(str(interaction.guild_id))
@@ -392,11 +410,26 @@ def setup_admin_commands(bot):
             )
             await interaction.followup.send(embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to delete server: {e}")
+            err = str(e).lower()
+            if any(k in err for k in ("foreign key", "fk_", "club", "violates")):
+                embed = create_embed(
+                    title="❌ Cannot Delete Server",
+                    description=(
+                        "This server still contains active book clubs. "
+                        "To prevent accidental data loss, please use `/club_delete` on each club individually "
+                        "before removing the server registration."
+                    ),
+                    color_key="error"
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Failed to delete server: {e}")
 
     # ── Club commands (club admin+) ───────────────────────────────────────────
 
     @bot.tree.command(name="club_create", description="Create a new book club in a channel")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         name="The name of the new club",
         channel="The channel to create the club in (defaults to current channel)"
@@ -432,12 +465,18 @@ def setup_admin_commands(bot):
                 created = bot.api.create_member({
                     "name": interaction.user.display_name,
                     "discord_id": str(interaction.user.id),
+                    "avatar_url": str(interaction.user.display_avatar.url),
                 })
                 member_data = created.get("member", created)
                 caller = {"id": member_data["id"], "name": member_data["name"]}
 
             bot.api.create_club(
-                {"name": name, "discord_channel": channel_id, "members": [caller]},
+                {
+                    "name": name,
+                    "discord_channel": channel_id,
+                    "founded_date": datetime.now().strftime("%Y-%m-%d"),
+                    "members": [caller],
+                },
                 guild_id
             )
             embed = create_embed(
@@ -450,6 +489,8 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to create club: {e}")
 
     @bot.tree.command(name="club_update", description="Update the club name or discord channel")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         name="The new club name",
         new_channel="The new channel to move the club to",
@@ -500,6 +541,8 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to update club: {e}")
 
     @bot.tree.command(name="club_delete", description="Delete the book club in a channel")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         channel="The channel containing the club to delete (defaults to current channel)"
     )
@@ -527,7 +570,12 @@ def setup_admin_commands(bot):
             "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await interaction.followup.send("Action cancelled.")
+            embed = create_embed(
+                title="❌ Action Cancelled",
+                description="No changes were made.",
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         try:
             bot.api.delete_club(club_data["id"], guild_id)
@@ -543,6 +591,8 @@ def setup_admin_commands(bot):
     # ── Member commands (club admin+) ─────────────────────────────────────────
 
     @bot.tree.command(name="member_add", description="Add a Discord user to a book club")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         member="The member to add to the club",
         channel="The channel containing the club (defaults to current channel)"
@@ -576,6 +626,7 @@ def setup_admin_commands(bot):
                 bot.api.create_member({
                     "name": member.display_name,
                     "discord_id": str(member.id),
+                    "avatar_url": str(member.display_avatar.url),
                     "clubs": [club_data["id"]]
                 })
             embed = create_embed(
@@ -588,6 +639,8 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to add member: {e}")
 
     @bot.tree.command(name="member_remove", description="Remove a member from a book club")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         member_id="The ID of the member to remove",
         channel="The channel containing the club (defaults to current channel)"
@@ -626,7 +679,12 @@ def setup_admin_commands(bot):
             "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await interaction.followup.send("Action cancelled.")
+            embed = create_embed(
+                title="❌ Action Cancelled",
+                description="No changes were made.",
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         try:
             bot.api.delete_member(member_id)
@@ -640,14 +698,16 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to remove member: {e}")
 
     @bot.tree.command(name="member_role", description="Update a member's role in a club")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
-        member_id="The ID of the member",
+        member="The Discord member to update",
         role="The new role (admin or member)",
         channel="The channel containing the club (defaults to current channel)"
     )
     async def member_role(
         interaction: discord.Interaction,
-        member_id: int,
+        member: discord.Member,
         role: Literal["admin", "member"],
         channel: discord.TextChannel = None
     ):
@@ -669,10 +729,17 @@ def setup_admin_commands(bot):
             await interaction.followup.send("❌ No book club found in that channel.")
             return
         try:
-            bot.api.update_member(member_id, {"club_roles": {club_data["id"]: role}})
+            member_data = bot.api.get_member_by_discord_id(str(member.id))
+            if not member_data:
+                await interaction.followup.send(
+                    f"❌ **{member.display_name}** is not registered in the bot.",
+                    ephemeral=True
+                )
+                return
+            bot.api.update_member(member_data["id"], {"club_roles": {club_data["id"]: role}})
             embed = create_embed(
                 title="✅ Role Updated",
-                description=f"Member `{member_id}` is now **{role}**.",
+                description=f"**{member.display_name}** is now **{role}**.",
                 color_key="success"
             )
             await interaction.followup.send(embed=embed)
@@ -682,25 +749,22 @@ def setup_admin_commands(bot):
     # ── Session commands (club admin+) ────────────────────────────────────────
 
     @bot.tree.command(name="session_create", description="Start a new reading session for the club.")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.autocomplete(book=book_autocomplete)
     @app_commands.describe(
         book="Search and select a book from the library",
         start_date="Session start date (YYYY-MM-DD, e.g. 2026-05-15)",
-        end_date="Session end date (YYYY-MM-DD, e.g. 2026-06-15)"
+        end_date="Session end date (YYYY-MM-DD, e.g. 2026-06-15)",
+        due_date="Reading deadline (YYYY-MM-DD, e.g. 2026-06-01) — optional"
     )
     async def session_create_command(
         interaction: discord.Interaction,
         book: str,
         start_date: str,
-        end_date: str
+        end_date: str,
+        due_date: str = None
     ):
-        if not interaction.guild_id:
-            await interaction.response.send_message(
-                "❌ This command can only be used in a Discord server, not in DMs.",
-                ephemeral=True
-            )
-            return
-
         await interaction.response.defer()
 
         guild_id = str(interaction.guild_id)
@@ -712,7 +776,7 @@ def setup_admin_commands(bot):
 
         if not _can_manage_clubs(interaction, club_data):
             await interaction.followup.send(
-                "❌ You need to be a Bookmaster or admin to create a session.",
+                "❌ You need to be an Admin to create a session.",
                 ephemeral=True
             )
             return
@@ -734,6 +798,16 @@ def setup_admin_commands(bot):
             )
             return
 
+        if due_date:
+            try:
+                datetime.strptime(due_date, "%Y-%m-%d")
+            except ValueError:
+                await interaction.followup.send(
+                    "❌ Due date must be in **YYYY-MM-DD** format (e.g., `2026-06-01`).",
+                    ephemeral=True
+                )
+                return
+
         # Value from autocomplete is "{external_google_id}|{title}|{author}"
         parts = book.split("|", 2)
         if len(parts) != 3 or not parts[1] or not parts[2]:
@@ -750,6 +824,9 @@ def setup_admin_commands(bot):
             "start_date": start_date,
             "end_date": end_date,
         }
+        if due_date:
+            session_data["due_date"] = due_date
+
         bot.api.create_session(session_data)
 
         embed = create_embed(
@@ -761,6 +838,8 @@ def setup_admin_commands(bot):
         print(f"[SUCCESS] Created session: [Server: {guild_id}, Club: {club_data['id']}, Book: {registered['id']} '{title}']")
 
     @bot.tree.command(name="session_update", description="Update the active reading session")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         due_date="The new due date (YYYY-MM-DD format)",
         book_title="The new book title",
@@ -817,6 +896,8 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to update session: {e}")
 
     @bot.tree.command(name="session_delete", description="Delete the active reading session")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         channel="The channel containing the club (defaults to current channel)"
     )
@@ -845,7 +926,12 @@ def setup_admin_commands(bot):
             "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await interaction.followup.send("Action cancelled.")
+            embed = create_embed(
+                title="❌ Action Cancelled",
+                description="No changes were made.",
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         try:
             bot.api.delete_session(session_id)
@@ -861,6 +947,8 @@ def setup_admin_commands(bot):
     # ── Discussion commands (club admin+) ─────────────────────────────────────
 
     @bot.tree.command(name="discussion_add", description="Add a discussion to the active session")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         title="Discussion title (e.g. 'Chapters 1-5')",
         date="Discussion date (YYYY-MM-DD)",
@@ -944,7 +1032,7 @@ def setup_admin_commands(bot):
         except APIError:
             pass  # Non-fatal — event will be created without an embedded ID
 
-        # Build timezone-aware datetimes for the Discord event
+        # Build timezone-aware datetimes for the Discord event (explicitly UTC)
         start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
         end_dt = start_dt + timedelta(hours=duration)
 
@@ -977,6 +1065,8 @@ def setup_admin_commands(bot):
         await interaction.followup.send(embed=embed)
 
     @bot.tree.command(name="discussion_update", description="Update an existing discussion in the active session")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.autocomplete(discussion_id=discussion_autocomplete)
     @app_commands.describe(
         discussion_id="The discussion to update (select from autocomplete)",
@@ -1063,6 +1153,8 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to update discussion: {e}")
 
     @bot.tree.command(name="discussion_delete", description="Delete a discussion from the active session")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.autocomplete(discussion_id=discussion_autocomplete)
     @app_commands.describe(
         discussion_id="The discussion to delete (select from autocomplete)",
@@ -1096,12 +1188,16 @@ def setup_admin_commands(bot):
             "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
-            await interaction.followup.send("Action cancelled.")
+            embed = create_embed(
+                title="❌ Action Cancelled",
+                description="No changes were made.",
+                color_key="error"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
-        session_id = club_data["active_session"]["id"]
         try:
-            bot.api.update_session(session_id, {"discussion_ids_to_delete": [discussion_id]})
+            bot.api.delete_discussion(discussion_id)
             embed = create_embed(
                 title="✅ Discussion Deleted",
                 description="The discussion has been removed from the session.",
@@ -1112,6 +1208,8 @@ def setup_admin_commands(bot):
             await interaction.followup.send(f"❌ Failed to delete discussion: {e}")
 
     @bot.tree.command(name="discussion_sync", description="Create Discord events for any discussions that don't have one")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         default_time="Start time for created events in HH:MM 24h format (default: 18:00)",
         default_duration="Duration in hours for created events (default: 1.0)",

@@ -16,6 +16,7 @@ def setup_member_commands(bot):
     """
 
     @bot.tree.command(name="join", description="Join the book club in this channel")
+    @app_commands.guild_only()
     async def join_command(interaction: discord.Interaction):
         """Join the book club linked to the current channel."""
         if not interaction.guild_id:
@@ -57,6 +58,7 @@ def setup_member_commands(bot):
         member_data = {
             "name": interaction.user.display_name,
             "discord_id": discord_id,
+            "avatar_url": str(interaction.user.display_avatar.url),
             "clubs": [club_id]
         }
 
@@ -79,6 +81,7 @@ def setup_member_commands(bot):
         print(f"[SUCCESS] User {discord_id} joined club {club_id} ({club_name})")
 
     @bot.tree.command(name="leave", description="Leave the book club in this channel")
+    @app_commands.guild_only()
     async def leave_command(interaction: discord.Interaction):
         """Leave the book club linked to the current channel."""
         if not interaction.guild_id:

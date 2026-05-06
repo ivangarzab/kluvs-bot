@@ -691,11 +691,31 @@ class BookClubAPI:
     async def search_books(self, query: str) -> List[Dict]:
         return await asyncio.to_thread(self._search_books_sync, query)
 
-    def _register_book_sync(self, title: str, author: str, external_google_id: str = None) -> Dict:
+    def _register_book_sync(
+        self,
+        title: str,
+        author: str,
+        external_google_id: str = None,
+        edition: str = None,
+        year: int = None,
+        isbn: str = None,
+        page_count: int = None,
+        image_url: str = None,
+    ) -> Dict:
         url = f"{self.functions_url}/book"
         data: Dict = {"title": title, "author": author}
         if external_google_id:
             data["external_google_id"] = external_google_id
+        if edition:
+            data["edition"] = edition
+        if year:
+            data["year"] = year
+        if isbn:
+            data["isbn"] = isbn
+        if page_count:
+            data["page_count"] = page_count
+        if image_url:
+            data["image_url"] = image_url
         try:
             response = requests.post(url, headers=self.headers, json=data)
             response.raise_for_status()
@@ -703,8 +723,46 @@ class BookClubAPI:
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "book")
 
-    async def register_book(self, title: str, author: str, external_google_id: str = None) -> Dict:
-        return await asyncio.to_thread(self._register_book_sync, title, author, external_google_id)
+    async def register_book(
+        self,
+        title: str,
+        author: str,
+        external_google_id: str = None,
+        edition: str = None,
+        year: int = None,
+        isbn: str = None,
+        page_count: int = None,
+        image_url: str = None,
+    ) -> Dict:
+        return await asyncio.to_thread(
+            self._register_book_sync,
+            title, author, external_google_id, edition, year, isbn, page_count, image_url
+        )
+
+    def delete_discussion(self, discussion_id: str) -> Dict:
+        """
+        Delete a specific discussion by ID.
+
+        Args:
+            discussion_id: The ID of the discussion to delete
+
+        Returns:
+            Dict containing success status and message
+
+        Raises:
+            ResourceNotFoundError: If the discussion doesn't exist
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/discussion"
+        params = {"id": discussion_id}
+
+        try:
+            response = requests.delete(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "discussion", discussion_id)
 
     def delete_session(self, session_id: str) -> Dict:
         """
