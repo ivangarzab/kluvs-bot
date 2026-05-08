@@ -75,6 +75,11 @@ def setup_admin_commands(bot):
         bot: The bot instance
     """
 
+    async def send_ephemeral(interaction: discord.Interaction, *args, **kwargs):
+        """Send an ephemeral followup (defaults to ephemeral=True)."""
+        kwargs.setdefault('ephemeral', True)
+        return await interaction.followup.send(*args, **kwargs)
+
     def _check_guild_admin(interaction: discord.Interaction):
         """Returns True if the user is the guild owner or has administrator/manage_guild permissions."""
         if interaction.user == interaction.guild.owner:
@@ -104,7 +109,7 @@ def setup_admin_commands(bot):
             @discord.ui.button(label="Confirm", style=discord.ButtonStyle.red)
             async def confirm_button(self, button_interaction: discord.Interaction, button: discord.ui.Button):
                 if button_interaction.user.id != interaction.user.id:
-                    await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
+                    await button_interaction.response.send_message("❌ You can't use this button.")
                     return
                 self.confirmed = True
                 for item in self.children:
@@ -115,7 +120,7 @@ def setup_admin_commands(bot):
             @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
             async def cancel_button(self, button_interaction: discord.Interaction, button: discord.ui.Button):
                 if button_interaction.user.id != interaction.user.id:
-                    await button_interaction.response.send_message("❌ You can't use this button.", ephemeral=True)
+                    await button_interaction.response.send_message("❌ You can't use this button.")
                     return
                 for item in self.children:
                     item.disabled = True
@@ -123,7 +128,7 @@ def setup_admin_commands(bot):
                 await button_interaction.response.edit_message(view=self)
 
         view = ConfirmView()
-        await interaction.followup.send(prompt, view=view)
+        await send_ephemeral(interaction,prompt, view=view)
         await view.wait()
         return view.confirmed
 
@@ -249,7 +254,7 @@ def setup_admin_commands(bot):
     @app_commands.describe(club_name="Name for your new book club")
     async def setup(interaction: discord.Interaction, club_name: str):
         """Guided onboarding for new servers."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         guild_id = str(interaction.guild_id)
         channel_id = str(interaction.channel_id)
 
@@ -263,7 +268,7 @@ def setup_admin_commands(bot):
                 ),
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
 
         try:
@@ -277,7 +282,7 @@ def setup_admin_commands(bot):
                     description=f"Failed to register server: {e}",
                     color_key="error"
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                await send_ephemeral(interaction,embed=embed)
                 return
 
         try:
@@ -308,7 +313,7 @@ def setup_admin_commands(bot):
                 description=f"Failed to create club: {e}",
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
 
         embed = create_embed(
@@ -343,7 +348,7 @@ def setup_admin_commands(bot):
             ],
             footer="Happy reading! 📖"
         )
-        await interaction.followup.send(embed=embed)
+        await send_ephemeral(interaction,embed=embed)
 
     # ── Server commands (manage_guild permission only) ────────────────────────
 
@@ -352,7 +357,7 @@ def setup_admin_commands(bot):
     @app_commands.guild_only()
     async def server_register(interaction: discord.Interaction):
         """Registers the Discord server."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         try:
             bot.api.register_server(str(interaction.guild_id), interaction.guild.name)
             embed = create_embed(
@@ -360,9 +365,9 @@ def setup_admin_commands(bot):
                 description=f"**{interaction.guild.name}** has been registered.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to register server: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to register server: {e}")
 
     @bot.tree.command(name="server_update", description="Update this server's registered name")
     @app_commands.default_permissions(manage_guild=True)
@@ -370,7 +375,7 @@ def setup_admin_commands(bot):
     @app_commands.describe(name="The new name for the server")
     async def server_update(interaction: discord.Interaction, name: str):
         """Updates the server's registered name."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         try:
             bot.api.update_server(str(interaction.guild_id), name)
             embed = create_embed(
@@ -378,16 +383,16 @@ def setup_admin_commands(bot):
                 description=f"Server name updated to **{name}**.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to update server: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to update server: {e}")
 
     @bot.tree.command(name="server_delete", description="Delete this server's registration and all data")
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     async def server_delete(interaction: discord.Interaction):
         """Deletes the server registration and all associated data."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         confirmed = await _confirm(
             interaction,
             "⚠️ This will delete **all server data** including clubs, members, and sessions. "
@@ -399,7 +404,7 @@ def setup_admin_commands(bot):
                 description="No changes were made.",
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
         try:
             bot.api.delete_server(str(interaction.guild_id))
@@ -408,7 +413,7 @@ def setup_admin_commands(bot):
                 description="Server registration and all associated data have been removed.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
             err = str(e).lower()
             if any(k in err for k in ("foreign key", "fk_", "club", "violates")):
@@ -421,9 +426,9 @@ def setup_admin_commands(bot):
                     ),
                     color_key="error"
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                await send_ephemeral(interaction,embed=embed)
             else:
-                await interaction.followup.send(f"❌ Failed to delete server: {e}")
+                await send_ephemeral(interaction,f"❌ Failed to delete server: {e}")
 
     # ── Club commands (club admin+) ───────────────────────────────────────────
 
@@ -436,23 +441,23 @@ def setup_admin_commands(bot):
     )
     async def club_create(interaction: discord.Interaction, name: str, channel: discord.TextChannel = None):
         """Creates a new book club. Caller is automatically assigned as owner."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         channel_id = str(channel.id) if channel else str(interaction.channel_id)
         guild_id = str(interaction.guild_id)
 
         if not name or not name.strip():
-            await interaction.followup.send("❌ Please provide a club name.")
+            await send_ephemeral(interaction,"❌ Please provide a club name.")
             return
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if club_data:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ This channel is already hosting a book club. "
                 "Please use a different channel or delete the existing club first."
             )
@@ -484,9 +489,9 @@ def setup_admin_commands(bot):
                 description=f"Book club **{name}** created in <#{channel_id}>. You are the owner.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to create club: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to create club: {e}")
 
     @bot.tree.command(name="club_update", description="Update the club name or discord channel")
     @app_commands.default_permissions(manage_guild=True)
@@ -503,20 +508,20 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Updates club details."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data:
-            await interaction.followup.send("❌ No book club found in that channel.")
+            await send_ephemeral(interaction,"❌ No book club found in that channel.")
             return
 
         update = {}
@@ -525,7 +530,7 @@ def setup_admin_commands(bot):
         if new_channel:
             update["discord_channel"] = str(new_channel.id)
         if not update:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Provide at least a new name or new channel."
             )
             return
@@ -536,9 +541,9 @@ def setup_admin_commands(bot):
                 description="Club details updated successfully.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to update club: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to update club: {e}")
 
     @bot.tree.command(name="club_delete", description="Delete the book club in a channel")
     @app_commands.default_permissions(manage_guild=True)
@@ -548,20 +553,20 @@ def setup_admin_commands(bot):
     )
     async def club_delete(interaction: discord.Interaction, channel: discord.TextChannel = None):
         """Deletes a book club and all its data."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data:
-            await interaction.followup.send("❌ No book club found in that channel.")
+            await send_ephemeral(interaction,"❌ No book club found in that channel.")
             return
 
         confirmed = await _confirm(
@@ -575,7 +580,7 @@ def setup_admin_commands(bot):
                 description="No changes were made.",
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
         try:
             bot.api.delete_club(club_data["id"], guild_id)
@@ -584,9 +589,9 @@ def setup_admin_commands(bot):
                 description=f"**{club_data['name']}** has been deleted.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to delete club: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to delete club: {e}")
 
     # ── Member commands (club admin+) ─────────────────────────────────────────
 
@@ -599,27 +604,27 @@ def setup_admin_commands(bot):
     )
     async def member_add(interaction: discord.Interaction, member: discord.Member, channel: discord.TextChannel = None):
         """Adds a mentioned Discord user to a club. Creates member record if needed."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data:
-            await interaction.followup.send("❌ No book club found in that channel.")
+            await send_ephemeral(interaction,"❌ No book club found in that channel.")
             return
         try:
             existing = bot.api.get_member_by_discord_id(str(member.id))
             if existing:
                 current_club_ids = [c["id"] for c in existing.get("clubs", [])]
                 if club_data["id"] in current_club_ids:
-                    await interaction.followup.send(f"**{member.display_name}** is already a member of this club.")
+                    await send_ephemeral(interaction,f"**{member.display_name}** is already a member of this club.")
                     return
                 bot.api.update_member(existing["id"], {"clubs": current_club_ids + [club_data["id"]]})
             else:
@@ -634,48 +639,54 @@ def setup_admin_commands(bot):
                 description=f"**{member.display_name}** has been added to the club.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to add member: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to add member: {e}")
 
     @bot.tree.command(name="member_remove", description="Remove a member from a book club")
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     @app_commands.describe(
-        member_id="The ID of the member to remove",
+        member="The Discord member to remove",
         channel="The channel containing the club (defaults to current channel)"
     )
-    async def member_remove(interaction: discord.Interaction, member_id: int, channel: discord.TextChannel = None):
-        """Removes a member by their ID."""
-        await interaction.response.defer()
+    async def member_remove(interaction: discord.Interaction, member: discord.Member, channel: discord.TextChannel = None):
+        """Removes a member from a club."""
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data:
-            await interaction.followup.send("❌ No book club found in that channel.")
+            await send_ephemeral(interaction,"❌ No book club found in that channel.")
             return
 
         try:
-            member_data = bot.api.get_member(member_id)
+            member_data = bot.api.get_member_by_discord_id(str(member.id))
+            if not member_data:
+                await send_ephemeral(interaction,
+                    f"❌ **{member.display_name}** is not registered in the bot.",
+                    ephemeral=True
+                )
+                return
             member_club_ids = [c["id"] for c in member_data.get("clubs", [])]
             if club_data["id"] not in member_club_ids:
-                await interaction.followup.send(f"❌ Member `{member_id}` is not in this club.")
+                await send_ephemeral(interaction,f"❌ **{member.display_name}** is not in this club.")
                 return
-        except ResourceNotFoundError:
-            await interaction.followup.send(f"❌ Member `{member_id}` not found.")
+        except APIError as e:
+            await send_ephemeral(interaction,f"❌ Failed to look up member: {e}")
             return
 
         confirmed = await _confirm(
             interaction,
-            f"⚠️ Remove member `{member_id}` from the club? "
+            f"⚠️ Remove **{member.display_name}** from the club? "
             "Click **Confirm** to proceed or **Cancel** to abort."
         )
         if not confirmed:
@@ -684,18 +695,18 @@ def setup_admin_commands(bot):
                 description="No changes were made.",
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
         try:
-            bot.api.delete_member(member_id)
+            bot.api.delete_member(member_data["id"])
             embed = create_embed(
                 title="✅ Member Removed",
-                description=f"Member `{member_id}` has been removed.",
+                description=f"**{member.display_name}** has been removed.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to remove member: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to remove member: {e}")
 
     @bot.tree.command(name="member_role", description="Update a member's role in a club")
     @app_commands.default_permissions(manage_guild=True)
@@ -712,7 +723,7 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Sets a member's role to admin or member."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
@@ -720,18 +731,18 @@ def setup_admin_commands(bot):
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data:
-            await interaction.followup.send("❌ No book club found in that channel.")
+            await send_ephemeral(interaction,"❌ No book club found in that channel.")
             return
         try:
             member_data = bot.api.get_member_by_discord_id(str(member.id))
             if not member_data:
-                await interaction.followup.send(
+                await send_ephemeral(interaction,
                     f"❌ **{member.display_name}** is not registered in the bot.",
                     ephemeral=True
                 )
@@ -742,9 +753,9 @@ def setup_admin_commands(bot):
                 description=f"**{member.display_name}** is now **{role}**.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to update role: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to update role: {e}")
 
     # ── Session commands (club admin+) ────────────────────────────────────────
 
@@ -765,7 +776,7 @@ def setup_admin_commands(bot):
         end_date: str,
         due_date: str = None
     ):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         guild_id = str(interaction.guild_id)
         channel_id = str(interaction.channel_id)
@@ -775,7 +786,7 @@ def setup_admin_commands(bot):
             raise ResourceNotFoundError(f"No book club found in channel {channel_id}")
 
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be an Admin to create a session.",
                 ephemeral=True
             )
@@ -786,13 +797,13 @@ def setup_admin_commands(bot):
             start = datetime.strptime(start_date, "%Y-%m-%d")
             end = datetime.strptime(end_date, "%Y-%m-%d")
             if start >= end:
-                await interaction.followup.send(
+                await send_ephemeral(interaction,
                     "❌ Start date must be before end date.",
                     ephemeral=True
                 )
                 return
         except ValueError:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Dates must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
                 ephemeral=True
             )
@@ -802,7 +813,7 @@ def setup_admin_commands(bot):
             try:
                 datetime.strptime(due_date, "%Y-%m-%d")
             except ValueError:
-                await interaction.followup.send(
+                await send_ephemeral(interaction,
                     "❌ Due date must be in **YYYY-MM-DD** format (e.g., `2026-06-01`).",
                     ephemeral=True
                 )
@@ -811,7 +822,7 @@ def setup_admin_commands(bot):
         # Value from autocomplete is "{external_google_id}|{title}|{author}"
         parts = book.split("|", 2)
         if len(parts) != 3 or not parts[1] or not parts[2]:
-            await interaction.followup.send("❌ Invalid book selection. Please use the autocomplete dropdown.", ephemeral=True)
+            await send_ephemeral(interaction,"❌ Invalid book selection. Please use the autocomplete dropdown.")
             return
         gid, title, author = parts
 
@@ -834,7 +845,7 @@ def setup_admin_commands(bot):
             description=f"✅ Successfully created a new reading session starting on {start_date}.",
             color_key="success"
         )
-        await interaction.followup.send(embed=embed)
+        await send_ephemeral(interaction,embed=embed)
         print(f"[SUCCESS] Created session: [Server: {guild_id}, Club: {club_data['id']}, Book: {registered['id']} '{title}']")
 
     @bot.tree.command(name="session_update", description="Update the active reading session")
@@ -854,20 +865,20 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Updates the active session."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data or not club_data.get("active_session"):
-            await interaction.followup.send("❌ No active session found in that channel.")
+            await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
         session_id = club_data["active_session"]["id"]
@@ -880,7 +891,7 @@ def setup_admin_commands(bot):
                 "author": book_author.strip()
             }
         if not update:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Provide at least a due date or both book title and author."
             )
             return
@@ -891,9 +902,9 @@ def setup_admin_commands(bot):
                 description="Session details updated successfully.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to update session: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to update session: {e}")
 
     @bot.tree.command(name="session_delete", description="Delete the active reading session")
     @app_commands.default_permissions(manage_guild=True)
@@ -903,20 +914,20 @@ def setup_admin_commands(bot):
     )
     async def session_delete(interaction: discord.Interaction, channel: discord.TextChannel = None):
         """Deletes the active session for a club."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data or not club_data.get("active_session"):
-            await interaction.followup.send("❌ No active session found in that channel.")
+            await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
         session_id = club_data["active_session"]["id"]
@@ -931,7 +942,7 @@ def setup_admin_commands(bot):
                 description="No changes were made.",
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
         try:
             bot.api.delete_session(session_id)
@@ -940,9 +951,9 @@ def setup_admin_commands(bot):
                 description="The active reading session has been deleted.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to delete session: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to delete session: {e}")
 
     # ── Discussion commands (club admin+) ─────────────────────────────────────
 
@@ -967,26 +978,26 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Adds a new discussion to the active reading session and creates a Discord scheduled event."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data or not club_data.get("active_session"):
-            await interaction.followup.send("❌ No active session found in that channel.")
+            await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
         try:
             datetime.strptime(date, "%Y-%m-%d")
         except ValueError:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
                 ephemeral=True
             )
@@ -995,14 +1006,14 @@ def setup_admin_commands(bot):
         try:
             datetime.strptime(time, "%H:%M")
         except ValueError:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Time must be in **HH:MM** 24h format (e.g., `18:00`).",
                 ephemeral=True
             )
             return
 
         if duration <= 0:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Duration must be greater than 0.",
                 ephemeral=True
             )
@@ -1015,7 +1026,7 @@ def setup_admin_commands(bot):
         try:
             bot.api.update_session(session_id, {"discussions": [new_discussion]})
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to add discussion: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to add discussion: {e}")
             return
 
         # Retrieve the server-assigned discussion ID so we can embed it in the event.
@@ -1062,7 +1073,7 @@ def setup_admin_commands(bot):
             description=description + "." + event_warning,
             color_key="success"
         )
-        await interaction.followup.send(embed=embed)
+        await send_ephemeral(interaction,embed=embed)
 
     @bot.tree.command(name="discussion_update", description="Update an existing discussion in the active session")
     @app_commands.default_permissions(manage_guild=True)
@@ -1084,24 +1095,24 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Updates an existing discussion in the active reading session."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data or not club_data.get("active_session"):
-            await interaction.followup.send("❌ No active session found in that channel.")
+            await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
         if not any([title, date, location]):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Provide at least one field to update (title, date, or location)."
             )
             return
@@ -1110,7 +1121,7 @@ def setup_admin_commands(bot):
             try:
                 datetime.strptime(date, "%Y-%m-%d")
             except ValueError:
-                await interaction.followup.send(
+                await send_ephemeral(interaction,
                     "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
                     ephemeral=True
                 )
@@ -1120,13 +1131,13 @@ def setup_admin_commands(bot):
         try:
             session = bot.api.get_session(session_id)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to retrieve session: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to retrieve session: {e}")
             return
 
         discussions = session.get("discussions", [])
         current = next((d for d in discussions if d["id"] == discussion_id), None)
         if not current:
-            await interaction.followup.send("❌ Discussion not found in the active session.")
+            await send_ephemeral(interaction,"❌ Discussion not found in the active session.")
             return
 
         updated = {
@@ -1148,9 +1159,9 @@ def setup_admin_commands(bot):
                 description=description + ".",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to update discussion: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to update discussion: {e}")
 
     @bot.tree.command(name="discussion_delete", description="Delete a discussion from the active session")
     @app_commands.default_permissions(manage_guild=True)
@@ -1166,20 +1177,20 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Deletes a discussion from the active reading session."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data or not club_data.get("active_session"):
-            await interaction.followup.send("❌ No active session found in that channel.")
+            await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
         confirmed = await _confirm(
@@ -1193,7 +1204,7 @@ def setup_admin_commands(bot):
                 description="No changes were made.",
                 color_key="error"
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await send_ephemeral(interaction,embed=embed)
             return
 
         try:
@@ -1203,9 +1214,9 @@ def setup_admin_commands(bot):
                 description="The discussion has been removed from the session.",
                 color_key="success"
             )
-            await interaction.followup.send(embed=embed)
+            await send_ephemeral(interaction,embed=embed)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to delete discussion: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to delete discussion: {e}")
 
     @bot.tree.command(name="discussion_sync", description="Create Discord events for any discussions that don't have one")
     @app_commands.default_permissions(manage_guild=True)
@@ -1222,33 +1233,33 @@ def setup_admin_commands(bot):
         channel: discord.TextChannel = None
     ):
         """Ensures every discussion in the active session has a corresponding Discord scheduled event."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
         club_data = bot.api.find_club_in_channel(channel_id, guild_id)
         if not _can_manage_clubs(interaction, club_data):
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ You need to be a club admin or owner to use this command.",
                 ephemeral=True
             )
             return
         if not club_data or not club_data.get("active_session"):
-            await interaction.followup.send("❌ No active session found in that channel.")
+            await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
         try:
             datetime.strptime(default_time, "%H:%M")
         except ValueError:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ default_time must be in **HH:MM** 24h format (e.g., `18:00`).",
                 ephemeral=True
             )
             return
 
         if default_duration <= 0:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ default_duration must be greater than 0.",
                 ephemeral=True
             )
@@ -1258,19 +1269,19 @@ def setup_admin_commands(bot):
         try:
             session = bot.api.get_session(session_id)
         except APIError as e:
-            await interaction.followup.send(f"❌ Failed to retrieve session: {e}")
+            await send_ephemeral(interaction,f"❌ Failed to retrieve session: {e}")
             return
 
         discussions = session.get("discussions", [])
         if not discussions:
-            await interaction.followup.send("ℹ️ No discussions found in the active session.")
+            await send_ephemeral(interaction,"ℹ️ No discussions found in the active session.")
             return
 
         # Build the set of discussion IDs already covered by an existing guild event.
         try:
             existing_events = await interaction.guild.fetch_scheduled_events()
         except discord.Forbidden:
-            await interaction.followup.send(
+            await send_ephemeral(interaction,
                 "❌ Couldn't fetch guild events — the bot is missing **Manage Events** permission."
             )
             return
@@ -1333,4 +1344,4 @@ def setup_admin_commands(bot):
             description="\n".join(lines),
             color_key="info"
         )
-        await interaction.followup.send(embed=embed)
+        await send_ephemeral(interaction,embed=embed)
