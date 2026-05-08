@@ -147,7 +147,7 @@ def setup_general_commands(bot):
             name="📖 Reading Commands",
             value="• `/session` - Show all session details\n"
                   "• `/book` - Show current book details\n"
-                  "• `/duedate` - Show the session's due date\n"
+                  "• `/due_date` - Show the session's due date\n"
                   "• `/discussions` - Show the session's discussion details\n"
                   "• `/book_summary` - AI-generated book summary",
             inline=False

@@ -23,7 +23,7 @@ A focused Discord bot for managing book clubs with session tracking, member mana
 - `/usage` — View all available commands
 - `/session` — Show all session details
 - `/book` — Show current book details
-- `/duedate` — Show session due date
+- `/due_date` — Show session due date
 - `/discussions` — View scheduled discussion topics
 - `/book_summary` — AI-generated book summary
 
@@ -68,7 +68,8 @@ A focused Discord bot for managing book clubs with session tracking, member mana
 ## Quick Start
 
 ### Invite to Server
-[Click to invite Kluvs bot](https://discord.com/oauth2/authorize?client_id=1327910712454152275)
+[Click to invite Kluvs bot](https://discord.com/oauth2/authorize?client_id=1327360422294192199)
+
 
 ### Local Development
 

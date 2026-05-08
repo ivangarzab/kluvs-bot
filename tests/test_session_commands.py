@@ -1,5 +1,5 @@
 """
-Tests for session commands (book, duedate, session, discussions, book_summary)
+Tests for session commands (book, due_date, session, discussions, book_summary)
 """
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -74,7 +74,7 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
 
         # Verify commands were registered
         self.assertIn('book', self.commands)
-        self.assertIn('duedate', self.commands)
+        self.assertIn('due_date', self.commands)
         self.assertIn('session', self.commands)
         self.assertIn('discussions', self.commands)
         self.assertIn('book_summary', self.commands)
@@ -160,8 +160,8 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         call_args = interaction.followup.send.call_args
         self.assertIn('no active reading session', str(call_args[0][0]))
 
-    async def test_duedate_command_success(self):
-        """Test the duedate command"""
+    async def test_due_date_command_success(self):
+        """Test the due_date command"""
         # Mock interaction
         interaction = AsyncMock()
         interaction.guild_id = 123456
@@ -170,8 +170,8 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         interaction.followup.send = AsyncMock()
 
         # Run the command
-        duedate_command = self.commands['duedate']['func']
-        await duedate_command(interaction)
+        due_date_command = self.commands['due_date']['func']
+        await due_date_command(interaction)
 
         # Verify defer was called
         interaction.response.defer.assert_called_once()
@@ -179,16 +179,16 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         # Verify followup.send was called
         interaction.followup.send.assert_called_once()
 
-    async def test_duedate_command_no_guild(self):
-        """Test the duedate command when not in a guild"""
+    async def test_due_date_command_no_guild(self):
+        """Test the due_date command when not in a guild"""
         # Mock interaction with no guild_id
         interaction = AsyncMock()
         interaction.guild_id = None
         interaction.response.send_message = AsyncMock()
 
         # Run the command
-        duedate_command = self.commands['duedate']['func']
-        await duedate_command(interaction)
+        due_date_command = self.commands['due_date']['func']
+        await due_date_command(interaction)
 
         # Verify error message was sent
         interaction.response.send_message.assert_called_once()

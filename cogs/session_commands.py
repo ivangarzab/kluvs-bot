@@ -1,5 +1,5 @@
 """
-Session-related commands (book, duedate, session, discussions)
+Session-related commands (book, due_date, session, discussions)
 """
 import discord
 from discord import app_commands
@@ -84,9 +84,9 @@ def setup_session_commands(bot):
         await interaction.followup.send(embed=embed)
         print(f"[SUCCESS] Sent book command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
-    @bot.tree.command(name="duedate", description="Show the session's due date")
+    @bot.tree.command(name="due_date", description="Show the session's due date")
     @app_commands.guild_only()
-    async def duedate_command(interaction: discord.Interaction):
+    async def due_date_command(interaction: discord.Interaction):
         if not interaction.guild_id:
             await interaction.response.send_message(
                 "❌ This command can only be used in a Discord server, not in DMs.", 
@@ -108,7 +108,7 @@ def setup_session_commands(bot):
             color_key="warning"
         )
         await interaction.followup.send(embed=embed)
-        print(f"[SUCCESS] Sent duedate command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
+        print(f"[SUCCESS] Sent due_date command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="session", description="Show current session details")
     @app_commands.guild_only()

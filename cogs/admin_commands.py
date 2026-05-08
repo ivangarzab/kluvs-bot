@@ -244,7 +244,7 @@ def setup_admin_commands(bot):
             ],
             footer="Use a command name for more details via Discord's help menu"
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ── Setup wizard (manage_guild permission only) ──────────────────────────
 
@@ -341,7 +341,7 @@ def setup_admin_commands(bot):
                     "value": (
                         "`/session` — view the current session\n"
                         "`/book` — see the current book\n"
-                        "`/duedate` — check the due date\n"
+                        "`/due_date` — check the due date\n"
                         "`/discussions` — view scheduled discussions\n"
                         "`/usage` — view all other commands"
                     ),
