@@ -805,8 +805,28 @@ def setup_admin_commands(bot):
             return
         gid, title, author = parts
 
-        # Register (or retrieve) the book in the local DB — idempotent via external_google_id
-        registered = await bot.api.register_book(title, author, external_google_id=gid)
+        # Fetch full book details (including edition, year, isbn, etc) from Google Books
+        full_book_data = None
+        try:
+            search_results = await bot.api.search_books(title)
+            for result in search_results:
+                if result.get("external_google_id") == gid:
+                    full_book_data = result
+                    break
+        except Exception as e:
+            print(f"[WARNING] Failed to fetch full book details: {e}")
+
+        # Register (or retrieve) the book in the local DB with enrichment data
+        register_kwargs = {"external_google_id": gid}
+        if full_book_data:
+            register_kwargs.update({
+                "edition": full_book_data.get("edition"),
+                "year": full_book_data.get("year"),
+                "isbn": full_book_data.get("isbn"),
+                "page_count": full_book_data.get("page_count"),
+                "image_url": full_book_data.get("image_url"),
+            })
+        registered = await bot.api.register_book(title, author, **register_kwargs)
 
         session_data = {
             "club_id": club_data["id"],
