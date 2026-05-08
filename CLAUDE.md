@@ -16,25 +16,39 @@ make coverage      # Coverage report
 make run           # Run bot
 ```
 
-**Environment:**
+**Environment Variables (for development):**
 ```
 ENV=dev
-DEV_TOKEN=your_token
-KEY_SUPABASE=your_key
-KEY_OPEN_AI=your_key
-DEV_SUPABASE_URL=your_url
-URL_EDGE_FUNCTION=your_edge_function_url
+TEST_GUILD_ID=test_guild_snowflake_id
+DEV_TOKEN=your_discord_bot_token
+DEV_SUPABASE_URL=http://localhost:54321
+DEV_SUPABASE_KEY=your_supabase_anon_key
+KEY_OPEN_AI=your_openai_api_key
+GOOGLE_BOOKS_API_KEY=your_google_books_api_key
+```
+
+**Environment Variables (for production):**
+```
+TOKEN=your_discord_bot_token
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_anon_key
+KEY_OPEN_AI=your_openai_api_key
+GOOGLE_BOOKS_API_KEY=your_google_books_api_key
 ```
 
 ## Architecture
 
-**Cog pattern:** Commands organized by area (general, session, member, admin)
+**Cog pattern:** Slash commands organized by functional area:
+- `general_commands.py` — Help, usage, support, donate, feedback, vote, version
+- `session_commands.py` — Reading sessions (view details, due dates, discussions)
+- `member_commands.py` — Join/leave book clubs
+- `admin_commands.py` — Server/club/member/session/discussion management (slash commands)
 
-**Service layer:** `OpenAIService` (GPT), `BookClubAPI` (REST client)
+**Service layer:** `OpenAIService` (GPT summaries and chat), `BookClubAPI` (REST client)
 
-**API client:** Custom exceptions, retry logic, guild-aware ops
+**API client:** Custom exceptions, retry logic, guild-aware ops, book search autocomplete
 
-**Database (Supabase):** Servers, Clubs, Members, Sessions, Books, Discussions
+**Database (Supabase):** Servers, Clubs, Members, Sessions, Books, Discussions with Discord event sync
 
 ## Project Structure
 
@@ -53,13 +67,15 @@ kluvs-bot/
 
 ## Code Patterns
 
-**Error handling:** Custom exceptions from `api.bookclub_api`, user-friendly messages from `utils.constants`
+**Error handling:** Custom exceptions from `api.bookclub_api` (APIError, ResourceNotFoundError), user-friendly messages from `utils.constants`
 
-**Embeds:** Use `utils.embeds.create_embed()` with colors from `utils.constants.COLORS`
+**Embeds:** Use `utils.embeds.create_embed()` with colors from `utils.constants.COLORS`, include user context in messages
 
-**Async:** All commands/interactions are async; use `AsyncMock` in tests
+**Slash commands:** Use `@bot.tree.command()` decorator, support autocomplete for book search and discussion selection
 
-**Logging:** Daily rotating logs in `logs/bot.log` with context (guild_id, user_id)
+**Async:** All commands/interactions are async; use `AsyncMock` in tests for async methods
+
+**Logging:** Daily rotating logs in `logs/bot.log` with context (guild_id, user_id, member_id)
 
 ## Testing
 

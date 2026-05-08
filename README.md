@@ -35,29 +35,35 @@ A focused Discord bot for managing book clubs with session tracking, member mana
 *Requires guild owner or club admin role*
 
 **Setup & Server (guild owner only):**
-- `!setup` — First-run wizard: register server and create a club
-- `!server_register` — Register this Discord server
-- `!server_update <name>` — Update server name
-- `!server_delete` — Delete server and all data
+- `/setup` — First-run wizard: register server and create a club
+- `/server_register` — Register this Discord server
+- `/server_update` — Update server name
+- `/server_delete` — Delete server and all data
 
 **Club Management:**
-- `!club_create <name>` — Create a new book club
-- `!club_update [--name <name>] [--new-channel <id>]` — Update club details
-- `!club_delete` — Delete the club
+- `/club_create` — Create a new book club
+- `/club_update` — Update club details (name, channel)
+- `/club_delete` — Delete the club
 
 **Member Management:**
-- `!member_add @User` — Add a member to the club
-- `!member_remove <id>` — Remove a member
-- `!member_role <id> <admin|member>` — Set member role
+- `/member_add` — Add a member to the club
+- `/member_remove` — Remove a member
+- `/member_role` — Set member role (admin/member)
 
 **Session Management:**
-- `!session_create "<title>" <author>` — Create a reading session
-- `!session_update [--due-date YYYY-MM-DD] [--book "<title>|<author>"]` — Update session
-- `!session_delete` — Delete the active session
+- `/session_create` — Create a reading session
+- `/session_update` — Update session (due date, book)
+- `/session_delete` — Delete the active session
+
+**Discussion Management:**
+- `/discussion_add` — Add a discussion topic to a session
+- `/discussion_update` — Update a discussion
+- `/discussion_delete` — Delete a discussion
+- `/discussion_sync` — Sync discussions to Discord events
 
 **Other:**
-- `!admin_help` — Show detailed admin command reference
-- `!version` — Display bot version
+- `/admin_help` — Show detailed admin command reference
+- `/version` — Display bot version
 
 ## Quick Start
 
@@ -82,11 +88,11 @@ make install
 **Create `.env` file:**
 ```
 ENV=dev
-DEV_TOKEN=your_discord_bot_token
-KEY_SUPABASE=your_supabase_anon_key
+TOKEN=your_discord_bot_token
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_anon_key
 KEY_OPEN_AI=your_openai_api_key
-DEV_SUPABASE_URL=your_supabase_url
-URL_EDGE_FUNCTION=your_edge_function_base_url
+GOOGLE_BOOKS_API_KEY=your_google_books_api_key
 ```
 
 **Run:**

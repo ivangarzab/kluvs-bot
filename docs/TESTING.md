@@ -42,9 +42,10 @@ tests/
 ├── test_openai_service.py                    # OpenAI service tests
 ├── test_config.py                            # Configuration tests
 ├── test_embeds.py                            # Embed utility tests
-├── test_admin_commands.py                    # Admin command tests
-├── test_general_commands.py                  # General command tests
+├── test_admin_commands.py                    # Admin command tests (slash commands)
+├── test_general_commands.py                  # General command tests (help, usage, etc.)
 ├── test_general_commands_comprehensive.py    # Comprehensive general command tests
+├── test_community_commands.py                # Community commands (support, donate, feedback, etc.)
 ├── test_member_commands.py                   # Member command tests (join/leave)
 └── run_tests.py                              # Test runner and discovery
 ```
@@ -150,25 +151,24 @@ Configuration is in `.vscode/settings.json`:
 
 ## Coverage
 
-### Current Coverage: ~90% (89.87%)
+### Current Coverage: ~90%+
 
-**100% Coverage Achieved:**
-- `api/__init__.py` - API module init
-- `cogs/general_commands.py` - Help/usage commands
+Run `make coverage` to see the latest coverage report.
+
+**Typical High Coverage (90%+):**
+- `cogs/general_commands.py` - General help/usage commands
+- `cogs/member_commands.py` - Join/leave commands
+- `cogs/session_commands.py` - Session management commands
+- `cogs/admin_commands.py` - Admin slash commands (setup, server, club, member, session, discussion)
 - `utils/constants.py` - Constants
 - `utils/embeds.py` - Discord embeds
 - `utils/schedulers.py` - Scheduled tasks
-
-**High Coverage (90%+):**
-- `cogs/member_commands.py` - 90% - Join/leave commands
-- `cogs/session_commands.py` - 92.08% - Session management commands
-- `cogs/admin_commands.py` - 98.78% - Admin prefix commands
-- `config.py` - 95.65% - Configuration
-- `events/message_handler.py` - 96.30% - Event handlers
+- `config.py` - Configuration
+- `events/message_handler.py` - Event handlers
 
 **Good Coverage (75%+):**
-- `api/bookclub_api.py` - 77.18% - Main API client
-- `services/openai_service.py` - 75.90% - OpenAI integration
+- `api/bookclub_api.py` - Main API client
+- `services/openai_service.py` - OpenAI integration
 
 ### Coverage Configuration
 See `.coveragerc` for configuration:
@@ -212,7 +212,7 @@ output = coverage.xml
 
 ### Testing Discord Commands
 
-Discord commands are **asynchronous** and require special handling:
+Discord commands are **asynchronous** (both slash commands and legacy prefix commands) and require special handling with `IsolatedAsyncioTestCase`:
 
 ```python
 class TestDiscordCommand(unittest.IsolatedAsyncioTestCase):
@@ -401,17 +401,21 @@ Coverage reports are automatically uploaded to [codecov.io](https://codecov.io) 
 ### What We Test
 
 1. **API Client (`api/bookclub_api.py`)**
-   - All CRUD operations for servers, clubs, members, sessions
+   - All CRUD operations for servers, clubs, members, sessions, books, discussions
    - Error handling (404, 400, 401, 500)
    - Request/response formatting
    - Custom exception types
 
 2. **Commands (`cogs/*.py`)**
-   - Command registration
-   - Interaction handling
+   - Slash command registration and handling
+   - Interaction handling with autocomplete
    - Response formatting (embeds)
-   - Error cases (no guild, no session, etc.)
-   - Member operations (join, leave)
+   - Error cases (no guild, no session, no club, etc.)
+   - Member operations (join, leave, add, remove, role management)
+   - Session management (create, update, delete)
+   - Discussion management (add, update, delete, sync to Discord events)
+   - Server setup (register, update, delete)
+   - Community commands (support, donate, feedback, vote, version)
 
 3. **Event Handlers (`events/message_handler.py`)**
    - Message processing
@@ -425,8 +429,9 @@ Coverage reports are automatically uploaded to [codecov.io](https://codecov.io) 
    - Channel handling
 
 5. **Services**
-   - OpenAI API calls and responses
+   - OpenAI API calls and responses (summaries, chat)
    - Retry logic and error handling
+   - Book autocomplete search
 
 6. **Utilities**
    - Embed creation
@@ -542,5 +547,3 @@ When adding new code:
 - [Discord.py testing guide](https://discordpy.readthedocs.io/en/stable/ext/test/)
 
 ---
-
-**Last Updated**: April 2026
