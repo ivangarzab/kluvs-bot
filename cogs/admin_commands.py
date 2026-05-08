@@ -765,16 +765,12 @@ def setup_admin_commands(bot):
     @app_commands.autocomplete(book=book_autocomplete)
     @app_commands.describe(
         book="Search and select a book from the library",
-        start_date="Session start date (YYYY-MM-DD, e.g. 2026-05-15)",
-        end_date="Session end date (YYYY-MM-DD, e.g. 2026-06-15)",
-        due_date="Reading deadline (YYYY-MM-DD, e.g. 2026-06-01) — optional"
+        due_date="Reading deadline (YYYY-MM-DD, e.g. 2026-06-01)"
     )
     async def session_create_command(
         interaction: discord.Interaction,
         book: str,
-        start_date: str,
-        end_date: str,
-        due_date: str = None
+        due_date: str
     ):
         await interaction.response.defer(ephemeral=True)
 
@@ -792,32 +788,15 @@ def setup_admin_commands(bot):
             )
             return
 
-        # Validate date format (YYYY-MM-DD)
+        # Validate due_date format (YYYY-MM-DD)
         try:
-            start = datetime.strptime(start_date, "%Y-%m-%d")
-            end = datetime.strptime(end_date, "%Y-%m-%d")
-            if start >= end:
-                await send_ephemeral(interaction,
-                    "❌ Start date must be before end date.",
-                    ephemeral=True
-                )
-                return
+            datetime.strptime(due_date, "%Y-%m-%d")
         except ValueError:
             await send_ephemeral(interaction,
-                "❌ Dates must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                "❌ Due date must be in **YYYY-MM-DD** format (e.g., `2026-06-01`).",
                 ephemeral=True
             )
             return
-
-        if due_date:
-            try:
-                datetime.strptime(due_date, "%Y-%m-%d")
-            except ValueError:
-                await send_ephemeral(interaction,
-                    "❌ Due date must be in **YYYY-MM-DD** format (e.g., `2026-06-01`).",
-                    ephemeral=True
-                )
-                return
 
         # Value from autocomplete is "{external_google_id}|{title}|{author}"
         parts = book.split("|", 2)
@@ -832,17 +811,15 @@ def setup_admin_commands(bot):
         session_data = {
             "club_id": club_data["id"],
             "book_id": registered["id"],
-            "start_date": start_date,
-            "end_date": end_date,
+            "due_date": due_date,
         }
-        if due_date:
-            session_data["due_date"] = due_date
 
+        print(f"[DEBUG] Sending session_data to backend: {session_data}")
         bot.api.create_session(session_data)
 
         embed = create_embed(
             title="📚 Session Created",
-            description=f"✅ Successfully created a new reading session starting on {start_date}.",
+            description=f"✅ Successfully created a new reading session with deadline {due_date}.",
             color_key="success"
         )
         await send_ephemeral(interaction,embed=embed)
@@ -1207,8 +1184,9 @@ def setup_admin_commands(bot):
             await send_ephemeral(interaction,embed=embed)
             return
 
+        session_id = club_data["active_session"]["id"]
         try:
-            bot.api.delete_discussion(discussion_id)
+            bot.api.update_session(session_id, {"discussion_ids_to_delete": [discussion_id]})
             embed = create_embed(
                 title="✅ Discussion Deleted",
                 description="The discussion has been removed from the session.",
