@@ -293,6 +293,7 @@ def setup_admin_commands(bot):
                 created = bot.api.create_member({
                     "name": interaction.user.display_name,
                     "discord_id": str(interaction.user.id),
+                    "handle": interaction.user.name,
                     "avatar_url": str(interaction.user.display_avatar.url),
                 })
                 member_data = created.get("member", created)
@@ -470,6 +471,7 @@ def setup_admin_commands(bot):
                 created = bot.api.create_member({
                     "name": interaction.user.display_name,
                     "discord_id": str(interaction.user.id),
+                    "handle": interaction.user.name,
                     "avatar_url": str(interaction.user.display_avatar.url),
                 })
                 member_data = created.get("member", created)
@@ -631,6 +633,7 @@ def setup_admin_commands(bot):
                 bot.api.create_member({
                     "name": member.display_name,
                     "discord_id": str(member.id),
+                    "handle": member.name,
                     "avatar_url": str(member.display_avatar.url),
                     "clubs": [club_data["id"]]
                 })

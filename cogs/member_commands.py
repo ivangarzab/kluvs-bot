@@ -58,6 +58,7 @@ def setup_member_commands(bot):
         member_data = {
             "name": interaction.user.display_name,
             "discord_id": discord_id,
+            "handle": interaction.user.name,
             "avatar_url": str(interaction.user.display_avatar.url),
             "clubs": [club_id]
         }
