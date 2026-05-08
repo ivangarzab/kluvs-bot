@@ -47,6 +47,7 @@ def setup_session_commands(bot):
         return club_data, club_data['active_session']
 
     @bot.tree.command(name="book", description="Show current book details")
+    @app_commands.guild_only()
     async def book_command(interaction: discord.Interaction):
         if not interaction.guild_id:
             await interaction.response.send_message(
@@ -84,6 +85,7 @@ def setup_session_commands(bot):
         print(f"[SUCCESS] Sent book command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="duedate", description="Show the session's due date")
+    @app_commands.guild_only()
     async def duedate_command(interaction: discord.Interaction):
         if not interaction.guild_id:
             await interaction.response.send_message(
@@ -109,6 +111,7 @@ def setup_session_commands(bot):
         print(f"[SUCCESS] Sent duedate command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="session", description="Show current session details")
+    @app_commands.guild_only()
     async def session_command(interaction: discord.Interaction):
         if not interaction.guild_id:
             await interaction.response.send_message(
@@ -161,6 +164,7 @@ def setup_session_commands(bot):
         print(f"[SUCCESS] Sent session command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
 
     @bot.tree.command(name="discussions", description="Show the session's discussion details")
+    @app_commands.guild_only()
     async def discussions_command(interaction: discord.Interaction):
         if not interaction.guild_id:
             await interaction.response.send_message(
@@ -204,6 +208,7 @@ def setup_session_commands(bot):
         print(f"[SUCCESS] Sent discussions command response: [Server: {club_data['server_id']}, Club: {club_data['id']}]")
     
     @bot.tree.command(name="book_summary", description="Let me provide a summary of the active book")
+    @app_commands.guild_only()
     async def booksummary_command(interaction: discord.Interaction):
         """Ask OpenAI for a summary of the active book."""
         if not interaction.guild_id:

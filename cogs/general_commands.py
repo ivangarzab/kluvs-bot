@@ -126,8 +126,8 @@ def setup_general_commands(bot):
         )
 
         embed.add_field(
-            name="👑 Server owner?",
-            value="Run `!setup` to initialize your server and create a book club.",
+            name="👑 Server admin?",
+            value="Run `/setup` to initialize your server and create a book club.",
             inline=False
         )
 
@@ -162,11 +162,11 @@ def setup_general_commands(bot):
 
         embed.add_field(
             name="⚙️ Admin Commands",
-            value="Admins and server owners: type `!admin_help` for admin commands.",
+            value="Server admins: use `/admin_help` for admin commands.",
             inline=False
         )
 
-        embed.set_footer(text=f"Use / for slash commands, ! for admin commands")
+        embed.set_footer(text="Use / to access all commands")
         await interaction.response.send_message(embed=embed)
         print("Sent usage command response.")
 
@@ -178,7 +178,8 @@ def setup_general_commands(bot):
             color_key="info"
         )
         view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="Join Community", url="https://kluvs.com/discord"))
+        community_url = "https://discord.com/oauth2/authorize?client_id=1327910712454152275"
+        view.add_item(discord.ui.Button(label="Join Community", url=community_url))
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @bot.tree.command(name="donate", description="Support the Kluvs project")

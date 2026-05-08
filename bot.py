@@ -56,7 +56,7 @@ class BookClubBot(commands.Bot):
             test_guild = discord.Object(id=int(test_guild_id))
             self.tree.copy_global_to(guild=test_guild)
             await self.tree.sync(guild=test_guild)
-            print(f"✅ Commands instantly synced to test server: {test_guild.id}")
+            print(f"✅ Commands synced to test server only: {test_guild.id}")
         else:
             await self.tree.sync()
         # ============================================================

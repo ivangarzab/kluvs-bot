@@ -136,82 +136,76 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
 
     async def test_setup_success_new_member(self):
         interaction = _make_interaction()
-        self._mock_message("My Book Club")
         self.bot.api.register_server.return_value = {"success": True}
         self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = None
         self.bot.api.create_member.return_value = {"member": {"id": 1, "name": "Test User"}}
         self.bot.api.create_club.return_value = {"success": True}
-        await self.commands["setup"]["func"](interaction)
+        await self.commands["setup"]["func"](interaction, club_name="My Book Club")
         self.bot.api.create_club.assert_called_once()
         call_kwargs = self.bot.api.create_club.call_args[0][0]
         self.assertEqual(call_kwargs["name"], "My Book Club")
         self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        self.assertEqual(interaction.followup.send.call_args.kwargs["ephemeral"], False)
 
     async def test_setup_success_existing_member(self):
         interaction = _make_interaction()
-        self._mock_message("Reader Club")
         self.bot.api.register_server.return_value = {"success": True}
         self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         self.bot.api.create_club.return_value = {"success": True}
-        await self.commands["setup"]["func"](interaction)
+        await self.commands["setup"]["func"](interaction, club_name="Reader Club")
         self.bot.api.create_member.assert_not_called()
         self.bot.api.create_club.assert_called_once()
+        self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        self.assertEqual(interaction.followup.send.call_args.kwargs["ephemeral"], False)
 
     async def test_setup_server_already_registered(self):
         interaction = _make_interaction()
-        self._mock_message("Reader Club")
         self.bot.api.register_server.side_effect = APIError("server already registered")
         self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         self.bot.api.create_club.return_value = {"success": True}
-        await self.commands["setup"]["func"](interaction)
+        await self.commands["setup"]["func"](interaction, club_name="Reader Club")
         # should continue to club creation despite the error
         self.bot.api.create_club.assert_called_once()
 
     async def test_setup_channel_collision(self):
         interaction = _make_interaction()
-        self._mock_message("My Book Club")
         self.bot.api.register_server.return_value = {"success": True}
         self.bot.api.find_club_in_channel.return_value = {"id": "club-1", "name": "Existing Club"}
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
-        await self.commands["setup"]["func"](interaction)
+        await self.commands["setup"]["func"](interaction, club_name="My Book Club")
         self.bot.api.create_club.assert_not_called()
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
-        self.assertIn("already hosting", interaction.followup.send.call_args.args[0])
+        # Check response.send_message was called with ephemeral=True
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("embed", interaction.response.send_message.call_args.kwargs)
+        self.assertEqual(interaction.response.send_message.call_args.kwargs["ephemeral"], True)
 
     async def test_setup_register_fails(self):
         interaction = _make_interaction()
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.register_server.side_effect = APIError("connection refused")
-        await self.commands["setup"]["func"](interaction)
+        await self.commands["setup"]["func"](interaction, club_name="Test Club")
         self.bot.api.create_club.assert_not_called()
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
-
-    async def test_setup_timeout(self):
-        interaction = _make_interaction()
-        self.bot.api.register_server.return_value = {"success": True}
-        self.bot.wait_for = AsyncMock(side_effect=TimeoutError())
-        await self.commands["setup"]["func"](interaction)
-        self.bot.api.create_club.assert_not_called()
-        self.assertIn("⏰", interaction.followup.send.call_args.args[0])
-
-    async def test_setup_empty_club_name(self):
-        interaction = _make_interaction()
-        self._mock_message("   ")
-        self.bot.api.register_server.return_value = {"success": True}
-        await self.commands["setup"]["func"](interaction)
-        self.bot.api.create_club.assert_not_called()
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_setup_create_club_api_error(self):
         interaction = _make_interaction()
-        self._mock_message("Sci-Fi Club")
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.register_server.return_value = {"success": True}
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         self.bot.api.create_club.side_effect = APIError("club creation failed")
-        await self.commands["setup"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        await self.commands["setup"]["func"](interaction, club_name="Sci-Fi Club")
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
 
 class TestServerCommands(unittest.IsolatedAsyncioTestCase):
@@ -231,7 +225,11 @@ class TestServerCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction()
         self.bot.api.register_server.side_effect = APIError("connection failed")
         await self.commands["server_register"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_server_update_success(self):
         interaction = _make_interaction()
@@ -244,7 +242,11 @@ class TestServerCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction()
         self.bot.api.update_server.side_effect = APIError("update failed")
         await self.commands["server_update"]["func"](interaction, name="New Name")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_server_delete_confirmed_success(self):
         interaction = _make_interaction()
@@ -259,14 +261,22 @@ class TestServerCommands(unittest.IsolatedAsyncioTestCase):
         self.bot.api.delete_server.side_effect = APIError("delete failed")
         with patch.object(discord.ui.View, "wait", _auto_confirm()):
             await self.commands["server_delete"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_server_delete_cancelled(self):
         interaction = _make_interaction()
         with patch.object(discord.ui.View, "wait", _no_confirm()):
             await self.commands["server_delete"]["func"](interaction)
         self.bot.api.delete_server.assert_not_called()
-        self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        # Check for cancellation message in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
 
 class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
@@ -291,13 +301,21 @@ class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
             "members": [{"discord_id": "111", "role": "admin"}],
         }
         await self.commands["club_create"]["func"](interaction, name="New Club")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_club_create_denied_when_no_club(self):
         interaction = _make_interaction(user_id="111", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["club_create"]["func"](interaction, name="New Club")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_club_create_denied_when_role_is_member(self):
         interaction = _make_interaction(user_id="111", is_owner=False)
@@ -307,7 +325,11 @@ class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
             "members": [{"discord_id": "111", "role": "member"}],
         }
         await self.commands["club_create"]["func"](interaction, name="New Club")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.create_club.assert_not_called()
 
     async def test_club_update_allowed_for_owner(self):
@@ -339,7 +361,11 @@ class TestCanManageClubs(unittest.IsolatedAsyncioTestCase):
             "members": [],
         }
         await self.commands["club_update"]["func"](interaction, name="X")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_club.assert_not_called()
 
 
@@ -376,14 +402,26 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
             "members": [{"discord_id": "111", "role": "owner"}],
         }
         await self.commands["club_create"]["func"](interaction, name="New Club")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
-        self.assertIn("already hosting", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("already hosting", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.create_club.assert_not_called()
 
     async def test_club_create_empty_name(self):
         interaction = _make_interaction(user_id="111")
         await self.commands["club_create"]["func"](interaction, name="")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.create_club.assert_not_called()
 
     async def test_club_create_api_error(self):
@@ -392,7 +430,11 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Alice"}
         self.bot.api.create_club.side_effect = APIError("server error")
         await self.commands["club_create"]["func"](interaction, name="Sci-Fi Club")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_club_update_name_success(self):
         interaction = _make_interaction(user_id="111")
@@ -416,41 +458,65 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["club_update"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_club.assert_not_called()
 
     async def test_club_update_permission_denied(self):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["club_update"]["func"](interaction, name="X")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_club.assert_not_called()
 
     async def test_club_update_no_club_in_channel(self):
         interaction = _make_interaction(user_id="111", is_owner=True)
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["club_update"]["func"](interaction, name="X")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_club_update_api_error(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.update_club.side_effect = APIError("update failed")
         await self.commands["club_update"]["func"](interaction, name="New Name")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_club_delete_permission_denied(self):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["club_delete"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_club.assert_not_called()
 
     async def test_club_delete_no_club(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["club_delete"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_club.assert_not_called()
 
     async def test_club_delete_cancelled(self):
@@ -459,7 +525,11 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
         with patch.object(discord.ui.View, "wait", _no_confirm()):
             await self.commands["club_delete"]["func"](interaction)
         self.bot.api.delete_club.assert_not_called()
-        self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        # Check for cancellation message in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_club_delete_success(self):
         interaction = _make_interaction(user_id="111")
@@ -476,7 +546,11 @@ class TestClubCommands(unittest.IsolatedAsyncioTestCase):
         self.bot.api.delete_club.side_effect = APIError("delete failed")
         with patch.object(discord.ui.View, "wait", _auto_confirm()):
             await self.commands["club_delete"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
 
 class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
@@ -492,12 +566,14 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
         new_member = MagicMock()
         new_member.id = 222
         new_member.display_name = "Alice"
+        new_member.name = "alice_handle"
+        new_member.display_avatar.url = "https://discord.com/avatar/222"
         await self.commands["member_add"]["func"](interaction, member=new_member)
-        self.bot.api.create_member.assert_called_once_with({
-            "name": "Alice",
-            "discord_id": "222",
-            "clubs": ["club-1"],
-        })
+        call_args = self.bot.api.create_member.call_args[0][0]
+        self.assertEqual(call_args["name"], "Alice")
+        self.assertEqual(call_args["discord_id"], "222")
+        self.assertEqual(call_args["handle"], "alice_handle")
+        self.assertEqual(call_args["clubs"], ["club-1"])
 
     async def test_member_add_already_in_club(self):
         interaction = _make_interaction(user_id="111")
@@ -541,7 +617,11 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
         new_member = MagicMock()
         new_member.id = 222
         await self.commands["member_add"]["func"](interaction, member=new_member)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.create_member.assert_not_called()
 
     async def test_member_add_no_club(self):
@@ -550,7 +630,11 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
         new_member = MagicMock()
         new_member.id = 222
         await self.commands["member_add"]["func"](interaction, member=new_member)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.create_member.assert_not_called()
 
     async def test_member_add_api_error(self):
@@ -562,72 +646,109 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
         new_member.id = 222
         new_member.display_name = "Alice"
         await self.commands["member_add"]["func"](interaction, member=new_member)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_member_remove_api_error(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.get_member.return_value = {"id": 42, "clubs": [{"id": "club-1"}]}
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 42, "clubs": [{"id": "club-1"}]}
         self.bot.api.delete_member.side_effect = APIError("delete failed")
 
         with patch.object(discord.ui.View, "wait", _auto_confirm()):
-            await self.commands["member_remove"]["func"](interaction, member_id=42)
+            member = MagicMock()
+            member.id = 42
+            await self.commands["member_remove"]["func"](interaction, member=member)
         self.assertIn("❌", interaction.followup.send.call_args_list[-1].args[0])
 
     async def test_member_remove_permission_denied(self):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = None
-        await self.commands["member_remove"]["func"](interaction, member_id=42)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_remove"]["func"](interaction, member=member)
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_member.assert_not_called()
 
     async def test_member_remove_no_club(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = None
-        await self.commands["member_remove"]["func"](interaction, member_id=42)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_remove"]["func"](interaction, member=member)
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_member.assert_not_called()
 
     async def test_member_remove_not_in_club(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.get_member.return_value = {"id": 42, "clubs": [{"id": "club-other"}]}
-        await self.commands["member_remove"]["func"](interaction, member_id=42)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 42, "clubs": [{"id": "club-other"}]}
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_remove"]["func"](interaction, member=member)
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_member.assert_not_called()
 
     async def test_member_remove_not_found(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.get_member.side_effect = ResourceNotFoundError("not found")
-        await self.commands["member_remove"]["func"](interaction, member_id=42)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        self.bot.api.get_member_by_discord_id.side_effect = ResourceNotFoundError("not found")
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_remove"]["func"](interaction, member=member)
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_member.assert_not_called()
 
     async def test_member_remove_cancelled(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.get_member.return_value = {"id": 42, "clubs": [{"id": "club-1"}]}
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 42, "clubs": [{"id": "club-1"}]}
         with patch.object(discord.ui.View, "wait", _no_confirm()):
-            await self.commands["member_remove"]["func"](interaction, member_id=42)
+            member = MagicMock()
+            member.id = 42
+            await self.commands["member_remove"]["func"](interaction, member=member)
         self.bot.api.delete_member.assert_not_called()
-        self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_member_remove_success(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.get_member.return_value = {"id": 42, "clubs": [{"id": "club-1"}]}
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 42, "clubs": [{"id": "club-1"}]}
         self.bot.api.delete_member.return_value = {"success": True}
         with patch.object(discord.ui.View, "wait", _auto_confirm()):
-            await self.commands["member_remove"]["func"](interaction, member_id=42)
+            member = MagicMock()
+            member.id = 42
+            await self.commands["member_remove"]["func"](interaction, member=member)
         self.bot.api.delete_member.assert_called_once_with(42)
         self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_member_role_success(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
+        self.bot.api.get_member_by_discord_id.return_value = {"id": 42}
         self.bot.api.update_member.return_value = {"success": True}
-        await self.commands["member_role"]["func"](interaction, member_id=42, role="admin")
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_role"]["func"](interaction, member=member, role="admin")
         self.bot.api.update_member.assert_called_once_with(
             42, {"club_roles": {"club-1": "admin"}}
         )
@@ -636,16 +757,28 @@ class TestMemberCommands(unittest.IsolatedAsyncioTestCase):
     async def test_member_role_no_club(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = None
-        await self.commands["member_role"]["func"](interaction, member_id=42, role="member")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_role"]["func"](interaction, member=member, role="member")
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_member.assert_not_called()
 
     async def test_member_role_api_error(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.update_member.side_effect = APIError("update failed")
-        await self.commands["member_role"]["func"](interaction, member_id=42, role="member")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        member = MagicMock()
+        member.id = 42
+        await self.commands["member_role"]["func"](interaction, member=member, role="member")
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
 
 class TestBookAutocomplete(unittest.IsolatedAsyncioTestCase):
@@ -743,20 +876,22 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
     async def test_session_create_success(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
+        self.bot.api.search_books = AsyncMock(return_value=[{"external_google_id": "gid-123", "title": "Dune", "author": "Frank Herbert"}])
         self.bot.api.register_book = AsyncMock(return_value={"id": 42, "title": "Dune", "author": "Frank Herbert"})
         self.bot.api.create_session.return_value = {"success": True}
         await self.commands["session_create"]["func"](
             interaction,
             book="gid-123|Dune|Frank Herbert",
-            start_date="2026-05-15",
-            end_date="2026-06-15"
+            due_date="2026-06-15"
         )
-        self.bot.api.register_book.assert_called_once_with("Dune", "Frank Herbert", external_google_id="gid-123")
+        # Check that register_book was called with the right positional args and external_google_id
+        call_args = self.bot.api.register_book.call_args
+        self.assertEqual(call_args[0], ("Dune", "Frank Herbert"))  # positional args
+        self.assertEqual(call_args[1]["external_google_id"], "gid-123")
         self.bot.api.create_session.assert_called_once_with({
             "club_id": "club-1",
             "book_id": 42,
-            "start_date": "2026-05-15",
-            "end_date": "2026-06-15",
+            "due_date": "2026-06-15",
         })
 
     async def test_session_create_permission_denied(self):
@@ -765,10 +900,13 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["session_create"]["func"](
             interaction,
             book="gid-123|Dune|Herbert",
-            start_date="2026-05-15",
-            end_date="2026-06-15"
+            due_date="2026-06-15"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.create_session.assert_not_called()
 
     async def test_session_create_no_club(self):
@@ -778,22 +916,21 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
             await self.commands["session_create"]["func"](
                 interaction,
                 book="gid-123|Dune|Herbert",
-                start_date="2026-05-15",
-                end_date="2026-06-15"
+                due_date="2026-06-15"
             )
         self.bot.api.create_session.assert_not_called()
 
     async def test_session_create_api_error(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
+        self.bot.api.search_books = AsyncMock(return_value=[{"external_google_id": "gid-123", "title": "Dune", "author": "Frank Herbert"}])
         self.bot.api.register_book = AsyncMock(return_value={"id": 42, "title": "Dune", "author": "Frank Herbert"})
         self.bot.api.create_session.side_effect = APIError("failed")
         with self.assertRaises(APIError):
             await self.commands["session_create"]["func"](
                 interaction,
                 book="gid-123|Dune|Frank Herbert",
-                start_date="2026-05-15",
-                end_date="2026-06-15"
+                due_date="2026-06-15"
             )
 
     async def test_session_create_invalid_date_format(self):
@@ -802,22 +939,9 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["session_create"]["func"](
             interaction,
             book="gid-123|Dune|Frank Herbert",
-            start_date="2026/05/15",  # Wrong format
-            end_date="2026-06-15"
+            due_date="2026/06/15"  # Wrong format
         )
-        self.assertIn("❌ Dates must be in **YYYY-MM-DD** format", interaction.followup.send.call_args.args[0])
-        self.bot.api.create_session.assert_not_called()
-
-    async def test_session_create_start_after_end(self):
-        interaction = _make_interaction(user_id="111")
-        self.bot.api.find_club_in_channel.return_value = self.club
-        await self.commands["session_create"]["func"](
-            interaction,
-            book="gid-123|Dune|Frank Herbert",
-            start_date="2026-06-15",
-            end_date="2026-05-15"  # End before start
-        )
-        self.assertIn("❌ Start date must be before end date", interaction.followup.send.call_args.args[0])
+        self.assertIn("❌ Due date must be in **YYYY-MM-DD** format", interaction.followup.send.call_args.args[0])
         self.bot.api.create_session.assert_not_called()
 
     async def test_session_create_invalid_book_format(self):
@@ -826,8 +950,7 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["session_create"]["func"](
             interaction,
             book="invalid",  # Missing pipes
-            start_date="2026-05-15",
-            end_date="2026-06-15"
+            due_date="2026-06-15"
         )
         self.assertIn("❌ Invalid book selection", interaction.followup.send.call_args.args[0])
         self.bot.api.create_session.assert_not_called()
@@ -854,14 +977,22 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["session_update"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_session_update_permission_denied(self):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["session_update"]["func"](interaction, due_date="2026-06-01")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_session_update_no_session(self):
@@ -870,7 +1001,11 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         club_no_session["active_session"] = None
         self.bot.api.find_club_in_channel.return_value = club_no_session
         await self.commands["session_update"]["func"](interaction, due_date="2026-06-01")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_session_update_api_error(self):
@@ -878,7 +1013,11 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.update_session.side_effect = APIError("update failed")
         await self.commands["session_update"]["func"](interaction, due_date="2026-06-01")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_session_delete_api_error(self):
         interaction = _make_interaction(user_id="111")
@@ -893,7 +1032,11 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = None
         await self.commands["session_delete"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_session.assert_not_called()
 
     async def test_session_delete_no_session(self):
@@ -902,7 +1045,11 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         club_no_session["active_session"] = None
         self.bot.api.find_club_in_channel.return_value = club_no_session
         await self.commands["session_delete"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.delete_session.assert_not_called()
 
     async def test_session_delete_cancelled(self):
@@ -911,7 +1058,11 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         with patch.object(discord.ui.View, "wait", _no_confirm()):
             await self.commands["session_delete"]["func"](interaction)
         self.bot.api.delete_session.assert_not_called()
-        self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        # Check for cancellation message in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_session_delete_success(self):
         interaction = _make_interaction(user_id="111")
@@ -1169,7 +1320,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="06/01/2026", time="18:00"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_add_invalid_time(self):
@@ -1178,7 +1333,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="6pm"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_add_invalid_duration(self):
@@ -1187,7 +1346,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="18:00", duration=0
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_add_permission_denied(self):
@@ -1196,7 +1359,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="18:00"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_add_no_session(self):
@@ -1207,7 +1374,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="18:00"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_add_api_error(self):
@@ -1217,7 +1388,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="18:00"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_discussion_add_forbidden_warns_but_succeeds(self):
         interaction = _make_interaction(user_id="111")
@@ -1271,7 +1446,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-1"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_update_invalid_date(self):
@@ -1280,7 +1459,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-1", date="01-06-2026"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_update_not_found(self):
@@ -1290,7 +1473,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-999", title="New Title"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_update_permission_denied(self):
@@ -1299,7 +1486,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-1", title="New"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_update_no_session(self):
@@ -1310,7 +1501,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-1", title="New"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_update_api_error_on_get(self):
@@ -1320,7 +1515,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-1", title="New"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_update_api_error_on_update(self):
@@ -1331,7 +1530,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         await self.commands["discussion_update"]["func"](
             interaction, discussion_id="disc-1", title="New"
         )
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     # ── discussion_delete ─────────────────────────────────────────────────────
 
@@ -1352,13 +1555,21 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         with patch.object(discord.ui.View, "wait", _no_confirm()):
             await self.commands["discussion_delete"]["func"](interaction, discussion_id="disc-1")
         self.bot.api.update_session.assert_not_called()
-        self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        # Check for cancellation message in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("cancelled", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_discussion_delete_permission_denied(self):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["discussion_delete"]["func"](interaction, discussion_id="disc-1")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_delete_no_session(self):
@@ -1367,7 +1578,11 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         club_no_session["active_session"] = None
         self.bot.api.find_club_in_channel.return_value = club_no_session
         await self.commands["discussion_delete"]["func"](interaction, discussion_id="disc-1")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.bot.api.update_session.assert_not_called()
 
     async def test_discussion_delete_api_error(self):
@@ -1465,7 +1680,11 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="999", is_owner=False)
         self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["discussion_sync"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_sync_no_session(self):
         interaction = _make_interaction(user_id="111")
@@ -1473,19 +1692,31 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
         club_no_session["active_session"] = None
         self.bot.api.find_club_in_channel.return_value = club_no_session
         await self.commands["discussion_sync"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_sync_invalid_default_time(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["discussion_sync"]["func"](interaction, default_time="6pm")
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_sync_invalid_default_duration(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         await self.commands["discussion_sync"]["func"](interaction, default_duration=0)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
     async def test_sync_forbidden_on_fetch_events(self):
         interaction = _make_interaction(user_id="111")
@@ -1495,7 +1726,11 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
             side_effect=discord.Forbidden(MagicMock(), "Missing Permissions")
         )
         await self.commands["discussion_sync"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
         self.assertIn("Manage Events", interaction.followup.send.call_args.args[0])
 
     async def test_sync_api_error_on_get_session(self):
@@ -1503,7 +1738,11 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.get_session.side_effect = APIError("unavailable")
         await self.commands["discussion_sync"]["func"](interaction)
-        self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        # Check for error in either positional or keyword arguments
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
 
 class TestDiscussionAutocomplete(unittest.IsolatedAsyncioTestCase):

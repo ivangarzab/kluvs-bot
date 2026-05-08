@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import requests
+import asyncio
 
 # Add parent directory to path to import the BookClubAPI class
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -995,6 +996,99 @@ class TestBookClubAPI(unittest.TestCase):
         result = self.api.get_member_by_discord_id("discord-id")
 
         self.assertIsNone(result)
+
+    @patch.object(BookClubAPI, '_search_books_sync')
+    def test_search_books_async(self, mock_sync):
+        """Test search_books async wrapper."""
+        mock_sync.return_value = [{"id": "1", "title": "Dune"}]
+
+        result = asyncio.run(self.api.search_books("dune"))
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "Dune")
+        mock_sync.assert_called_once_with("dune")
+
+    @patch.object(BookClubAPI, '_register_book_sync')
+    def test_register_book_async_with_optional_params(self, mock_sync):
+        """Test register_book async wrapper with optional parameters."""
+        mock_sync.return_value = {"id": 42, "title": "Dune", "edition": "First"}
+
+        result = asyncio.run(self.api.register_book(
+            "Dune",
+            "Frank Herbert",
+            "abc123",
+            edition="First",
+            year=1965,
+            isbn="123-456",
+            page_count=688,
+            image_url="https://example.com/dune.jpg"
+        ))
+
+        self.assertEqual(result["title"], "Dune")
+        self.assertEqual(result["edition"], "First")
+        mock_sync.assert_called_once_with(
+            "Dune", "Frank Herbert", "abc123", "First", 1965, "123-456", 688, "https://example.com/dune.jpg"
+        )
+
+    @patch('requests.post')
+    def test_register_book_sync_with_optional_params(self, mock_post):
+        """Test _register_book_sync with optional parameters."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "book": {"id": 42, "title": "Foundation", "year": 1951}
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        result = self.api._register_book_sync(
+            "Foundation",
+            "Isaac Asimov",
+            "xyz789",
+            edition="Original",
+            year=1951,
+            isbn="978-0-553",
+            page_count=255,
+            image_url="https://example.com/foundation.jpg"
+        )
+
+        self.assertEqual(result["title"], "Foundation")
+        self.assertEqual(result["year"], 1951)
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args[1]['json']
+        self.assertEqual(call_args['edition'], "Original")
+        self.assertEqual(call_args['year'], 1951)
+        self.assertEqual(call_args['isbn'], "978-0-553")
+        self.assertEqual(call_args['page_count'], 255)
+        self.assertEqual(call_args['image_url'], "https://example.com/foundation.jpg")
+
+    @patch('requests.delete')
+    def test_delete_discussion_success(self, mock_delete):
+        """Test delete_discussion with valid ID."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"success": True}
+        mock_response.raise_for_status = Mock()
+        mock_delete.return_value = mock_response
+
+        result = self.api.delete_discussion("discussion-123")
+
+        self.assertTrue(result["success"])
+        mock_delete.assert_called_once()
+
+    @patch('requests.post')
+    def test_create_club_connection_error(self, mock_post):
+        """Test create_club with connection error."""
+        mock_post.side_effect = requests.exceptions.ConnectionError("Network error")
+
+        with self.assertRaises(APIError):
+            self.api.create_club({"name": "Test Club", "discord_channel": "123"}, "guild-1")
+
+    @patch('requests.get')
+    def test_get_club_connection_error(self, mock_get):
+        """Test get_club with connection error."""
+        mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
+
+        with self.assertRaises(APIError):
+            self.api.get_club("club-1", "guild-1")
 
 
 if __name__ == '__main__':
