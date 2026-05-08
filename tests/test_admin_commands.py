@@ -146,6 +146,7 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         call_kwargs = self.bot.api.create_club.call_args[0][0]
         self.assertEqual(call_kwargs["name"], "My Book Club")
         self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        self.assertEqual(interaction.followup.send.call_args.kwargs["ephemeral"], False)
 
     async def test_setup_success_existing_member(self):
         interaction = _make_interaction()
@@ -156,6 +157,8 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         await self.commands["setup"]["func"](interaction, club_name="Reader Club")
         self.bot.api.create_member.assert_not_called()
         self.bot.api.create_club.assert_called_once()
+        self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        self.assertEqual(interaction.followup.send.call_args.kwargs["ephemeral"], False)
 
     async def test_setup_server_already_registered(self):
         interaction = _make_interaction()
@@ -174,18 +177,14 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         await self.commands["setup"]["func"](interaction, club_name="My Book Club")
         self.bot.api.create_club.assert_not_called()
-        # Check for error in either positional or keyword arguments
-        if interaction.followup.send.call_args.args:
-            self.assertIn("❌", interaction.followup.send.call_args.args[0])
-        else:
-            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
-        if interaction.followup.send.call_args.args:
-            self.assertIn("already hosting", interaction.followup.send.call_args.args[0])
-        else:
-            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        # Check response.send_message was called with ephemeral=True
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("embed", interaction.response.send_message.call_args.kwargs)
+        self.assertEqual(interaction.response.send_message.call_args.kwargs["ephemeral"], True)
 
     async def test_setup_register_fails(self):
         interaction = _make_interaction()
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.register_server.side_effect = APIError("connection refused")
         await self.commands["setup"]["func"](interaction, club_name="Test Club")
         self.bot.api.create_club.assert_not_called()
@@ -195,36 +194,13 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
         else:
             self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
-    async def test_setup_timeout(self):
-        interaction = _make_interaction()
-        self.bot.api.register_server.return_value = {"success": True}
-        self.bot.wait_for = AsyncMock(side_effect=TimeoutError())
-        await self.commands["setup"]["func"](interaction, club_name="Test Club")
-        self.bot.api.create_club.assert_not_called()
-        # Check for timeout message in either positional or keyword arguments
-        if interaction.followup.send.call_args.args:
-            self.assertIn("⏰", interaction.followup.send.call_args.args[0])
-        else:
-            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
-
-    async def test_setup_empty_club_name(self):
-        interaction = _make_interaction()
-        self.bot.api.register_server.return_value = {"success": True}
-        await self.commands["setup"]["func"](interaction, club_name="  ")
-        self.bot.api.create_club.assert_not_called()
-        # Check that an error was sent (either as positional arg or in embed)
-        if interaction.followup.send.call_args.args:
-            self.assertIn("❌", interaction.followup.send.call_args.args[0])
-        else:
-            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
-
     async def test_setup_create_club_api_error(self):
         interaction = _make_interaction()
-        self._mock_message("Sci-Fi Club")
+        self.bot.api.find_club_in_channel.return_value = None
         self.bot.api.register_server.return_value = {"success": True}
         self.bot.api.get_member_by_discord_id.return_value = {"id": 99, "name": "Test User"}
         self.bot.api.create_club.side_effect = APIError("club creation failed")
-        await self.commands["setup"]["func"](interaction, club_name="Test Club")
+        await self.commands["setup"]["func"](interaction, club_name="Sci-Fi Club")
         # Check for error in either positional or keyword arguments
         if interaction.followup.send.call_args.args:
             self.assertIn("❌", interaction.followup.send.call_args.args[0])

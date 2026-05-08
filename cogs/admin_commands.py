@@ -254,11 +254,10 @@ def setup_admin_commands(bot):
     @app_commands.describe(club_name="Name for your new book club")
     async def setup(interaction: discord.Interaction, club_name: str):
         """Guided onboarding for new servers."""
-        await interaction.response.defer(ephemeral=True)
         guild_id = str(interaction.guild_id)
         channel_id = str(interaction.channel_id)
 
-        # Fail fast: check if a club already exists in this channel before doing anything
+        # Fail fast: check if a club already exists in this channel before deferring
         if bot.api.find_club_in_channel(channel_id, guild_id):
             embed = create_embed(
                 title="❌ Club Already Exists",
@@ -268,8 +267,10 @@ def setup_admin_commands(bot):
                 ),
                 color_key="error"
             )
-            await send_ephemeral(interaction,embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=False)
 
         try:
             bot.api.register_server(guild_id, interaction.guild.name)
@@ -349,7 +350,7 @@ def setup_admin_commands(bot):
             ],
             footer="Happy reading! 📖"
         )
-        await send_ephemeral(interaction,embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=False)
 
     # ── Server commands (manage_guild permission only) ────────────────────────
 
