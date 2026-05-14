@@ -5,6 +5,12 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Discord.py](https://img.shields.io/badge/discord.py-latest-blue.svg)](https://github.com/Rapptz/discord.py)
 
+<div align="center">
+
+[![Discord Bots](https://top.gg/api/widget/1327360422294192199.svg)](https://top.gg/bot/1327360422294192199)
+
+</div>
+
 A focused Discord bot for managing book clubs with session tracking, member management, and AI-powered features.
 
 ## Features
