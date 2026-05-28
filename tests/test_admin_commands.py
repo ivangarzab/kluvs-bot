@@ -208,6 +208,147 @@ class TestSetupCommand(unittest.IsolatedAsyncioTestCase):
             self.assertIn("embed", interaction.followup.send.call_args.kwargs)
 
 
+class TestLinkClubCommand(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.bot, self.commands = _make_bot()
+        self.club_id = "club-uuid-1"
+
+    def _make_club(self, discord_channel=None):
+        return {
+            "id": self.club_id,
+            "name": "Dashboard Club",
+            "discord_channel": discord_channel,
+        }
+
+    def _make_caller(self, role=None):
+        clubs = []
+        if role:
+            clubs = [{"id": self.club_id, "name": "Dashboard Club", "role": role}]
+        return {"id": 42, "name": "Test User", "discord_id": "111", "clubs": clubs}
+
+    async def test_link_club_success_owner(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role="owner")
+        self.bot.api.register_server.return_value = {"success": True}
+        self.bot.api.update_club.return_value = {"success": True}
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_called_once()
+        call_args = self.bot.api.update_club.call_args[0]
+        self.assertEqual(call_args[0], self.club_id)
+        self.assertIn("discord_channel", call_args[1])
+        interaction.followup.send.assert_called_once()
+        self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+
+    async def test_link_club_success_admin(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role="admin")
+        self.bot.api.register_server.return_value = {"success": True}
+        self.bot.api.update_club.return_value = {"success": True}
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_called_once()
+
+    async def test_link_club_club_not_found(self):
+        interaction = _make_interaction()
+        self.bot.api.get_club_by_uuid.side_effect = ResourceNotFoundError("club", "bad-id")
+
+        await self.commands["link_club"]["func"](interaction, club_id="bad-id")
+
+        self.bot.api.update_club.assert_not_called()
+        msg = interaction.followup.send.call_args
+        self.assertIn("❌", msg.args[0] if msg.args else str(msg.kwargs))
+
+    async def test_link_club_already_linked(self):
+        interaction = _make_interaction()
+        self.bot.api.get_club_by_uuid.return_value = self._make_club(discord_channel="999")
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_not_called()
+        msg = interaction.followup.send.call_args
+        self.assertIn("❌", msg.args[0] if msg.args else str(msg.kwargs))
+
+    async def test_link_club_discord_not_linked(self):
+        interaction = _make_interaction()
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = None
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_not_called()
+        msg = interaction.followup.send.call_args
+        self.assertIn("❌", msg.args[0] if msg.args else str(msg.kwargs))
+
+    async def test_link_club_insufficient_role_member(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role="member")
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_not_called()
+        msg = interaction.followup.send.call_args
+        self.assertIn("❌", msg.args[0] if msg.args else str(msg.kwargs))
+
+    async def test_link_club_insufficient_role_not_in_club(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role=None)
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_not_called()
+
+    async def test_link_club_register_server_idempotent(self):
+        """register_server raising a duplicate error should not abort the flow."""
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role="owner")
+        self.bot.api.register_server.side_effect = APIError("409 already exists")
+        self.bot.api.update_club.return_value = {"success": True}
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_called_once()
+
+    async def test_link_club_register_server_hard_fail(self):
+        """A non-duplicate register_server error should abort."""
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role="owner")
+        self.bot.api.register_server.side_effect = APIError("connection refused")
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_not_called()
+
+    async def test_link_club_update_fails(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.get_club_by_uuid.return_value = self._make_club()
+        self.bot.api.get_member_by_discord_id.return_value = self._make_caller(role="owner")
+        self.bot.api.register_server.return_value = {"success": True}
+        self.bot.api.update_club.side_effect = APIError("update failed")
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        msg = interaction.followup.send.call_args
+        content = msg.args[0] if msg.args else str(msg.kwargs)
+        self.assertIn("❌", content)
+
+    async def test_link_club_fetch_api_error(self):
+        interaction = _make_interaction()
+        self.bot.api.get_club_by_uuid.side_effect = APIError("server error")
+
+        await self.commands["link_club"]["func"](interaction, club_id=self.club_id)
+
+        self.bot.api.update_club.assert_not_called()
+
+
 class TestServerCommands(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.bot, self.commands = _make_bot()
