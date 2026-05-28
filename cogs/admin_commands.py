@@ -248,7 +248,7 @@ def setup_admin_commands(bot):
 
     # ── Setup wizard (manage_guild permission only) ──────────────────────────
 
-    @bot.tree.command(name="setup", description="First-run wizard: register server and create a book club")
+    @bot.tree.command(name="setup", description="Create a new book club in this channel. Already have a club on the dashboard? Use /link_club.")
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     @app_commands.describe(club_name="Name for your new book club")
@@ -595,6 +595,70 @@ def setup_admin_commands(bot):
             await send_ephemeral(interaction,embed=embed)
         except APIError as e:
             await send_ephemeral(interaction,f"❌ Failed to delete club: {e}")
+
+    # ── Link club command (manage_guild permission + Kluvs club admin) ───────
+
+    @bot.tree.command(name="link_club", description="Link a club you created on the Kluvs dashboard to this Discord channel")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    @app_commands.describe(club_id="The UUID of the club from the Kluvs dashboard")
+    async def link_club(interaction: discord.Interaction, club_id: str):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            club_data = bot.api.get_club_by_uuid(club_id)
+        except ResourceNotFoundError:
+            await send_ephemeral(interaction, "❌ Club not found. Check the UUID and try again.")
+            return
+        except APIError as e:
+            await send_ephemeral(interaction, f"❌ Failed to fetch club: {e}")
+            return
+
+        if club_data.get("discord_channel"):
+            await send_ephemeral(interaction, "❌ This club is already linked to a Discord channel.")
+            return
+
+        caller = bot.api.get_member_by_discord_id(str(interaction.user.id))
+        if not caller:
+            await send_ephemeral(interaction,
+                "❌ Your Discord account isn't linked to a Kluvs account. "
+                "Please sign in on the Kluvs dashboard and link your Discord account first."
+            )
+            return
+
+        caller_role = next(
+            (c.get("role") for c in caller.get("clubs", []) if c.get("id") == club_id),
+            None
+        )
+        if caller_role not in ("admin", "owner"):
+            await send_ephemeral(interaction, "❌ You must be a club admin or owner to link it to Discord.")
+            return
+
+        try:
+            bot.api.register_server(str(interaction.guild.id), interaction.guild.name)
+        except APIError as e:
+            err = str(e).lower()
+            if not any(k in err for k in ("already", "duplicate", "409")):
+                await send_ephemeral(interaction, f"❌ Failed to register server: {e}")
+                return
+
+        try:
+            bot.api.update_club(
+                club_id,
+                {"discord_channel": str(interaction.channel.id)},
+                str(interaction.guild.id)
+            )
+        except APIError as e:
+            await send_ephemeral(interaction, f"❌ Failed to link club: {e}")
+            return
+
+        club_name = club_data.get("name", club_id)
+        embed = create_embed(
+            title="✅ Club Linked",
+            description=f"Club **{club_name}** is now linked to {interaction.channel.mention}.",
+            color_key="success"
+        )
+        await send_ephemeral(interaction, embed=embed)
 
     # ── Member commands (club admin+) ─────────────────────────────────────────
 
