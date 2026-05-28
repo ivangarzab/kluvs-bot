@@ -154,6 +154,41 @@ class TestBookClubAPI(unittest.TestCase):
             params={"id": "club-1", "server_id": self.test_guild_id}
         )
 
+    @patch('requests.get')
+    def test_get_club_by_uuid(self, mock_get):
+        """Test get_club_by_uuid fetches club by ID without guild context."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": "club-uuid-1",
+            "name": "Dashboard Club",
+            "discord_channel": None,
+            "members": []
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        result = self.api.get_club_by_uuid("club-uuid-1")
+
+        self.assertEqual(result["id"], "club-uuid-1")
+        self.assertEqual(result["name"], "Dashboard Club")
+        mock_get.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/club",
+            headers=self.api.headers,
+            params={"id": "club-uuid-1"}
+        )
+
+    @patch('requests.get')
+    def test_get_club_by_uuid_not_found(self, mock_get):
+        """Test get_club_by_uuid raises ResourceNotFoundError on 404."""
+        from requests.exceptions import HTTPError
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.get_club_by_uuid("nonexistent-uuid")
+
     @patch('requests.post')
     def test_create_club(self, mock_post):
         """Test create_club method with guild_id."""
