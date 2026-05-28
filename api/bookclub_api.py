@@ -260,6 +260,17 @@ class BookClubAPI:
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "club", club_id)
     
+    def get_club_by_uuid(self, club_id: str) -> Dict:
+        """Fetch a club by UUID without requiring a guild context."""
+        url = f"{self.functions_url}/club"
+        params = {"id": club_id}
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "club", club_id)
+
     def get_club_by_discord_channel(self, discord_channel_id: str, guild_id: str) -> Dict:
         """
         Get details for a specific club by Discord channel ID.
