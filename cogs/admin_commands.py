@@ -1051,7 +1051,7 @@ def setup_admin_commands(bot):
         active_session = club_data["active_session"]
         session_id = active_session["id"]
         book_title = active_session.get("book", {}).get("title", "the current book")
-        reading_count = sum(1 for m in active_session.get("members", []) if m.get("is_reading", False))
+        reading_count = sum(1 for m in active_session.get("members", []) if m.get("is_reading", True))
 
         confirmed = await _confirm(
             interaction,

@@ -1297,19 +1297,18 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         last_msg = interaction.followup.send.call_args_list[-1].args[0]
         self.assertIn("❌", last_msg)
 
-    async def test_session_finish_reading_count_uses_false_default(self):
-        """Members missing is_reading should NOT be counted as reading."""
+    async def test_session_finish_reading_count_uses_true_default(self):
+        """Members missing is_reading default to True (matches DB column DEFAULT true)."""
         interaction = _make_interaction(user_id="111")
         club = self._club_with_members()
-        # Add a member with no is_reading field
+        # Add a member with no is_reading field — DB defaults it to true, so count it
         club["active_session"]["members"].append({"member_id": 4})
         self.bot.api.find_club_in_channel.return_value = club
-        self.bot.api.finish_session.return_value = {"success": True, "members_credited": 2}
+        self.bot.api.finish_session.return_value = {"success": True, "members_credited": 3}
 
         captured_prompt = []
 
         async def capture_wait(self_view):
-            # Grab the confirmation message text (first followup.send call)
             call_args = interaction.followup.send.call_args
             if call_args and call_args.args:
                 captured_prompt.append(call_args.args[0])
@@ -1318,9 +1317,9 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         with patch.object(discord.ui.View, "wait", capture_wait):
             await self.commands["session_finish"]["func"](interaction)
 
-        # Only the 2 explicit is_reading=True members should appear in the prompt
-        self.assertTrue(any("2 member" in p for p in captured_prompt),
-                        f"Expected '2 member' in prompt, got: {captured_prompt}")
+        # 2 explicit True + 1 missing field (defaults True) = 3 in the prompt
+        self.assertTrue(any("3 member" in p for p in captured_prompt),
+                        f"Expected '3 member' in prompt, got: {captured_prompt}")
 
 
 class TestAdminHelpCommand(unittest.IsolatedAsyncioTestCase):
