@@ -1020,6 +1020,65 @@ def setup_admin_commands(bot):
         except APIError as e:
             await send_ephemeral(interaction,f"❌ Failed to delete session: {e}")
 
+    @bot.tree.command(name="session_finish", description="Finish the active reading session and credit all participating members")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    @app_commands.describe(
+        channel="The channel containing the club (defaults to current channel)"
+    )
+    async def session_finish(interaction: discord.Interaction, channel: discord.TextChannel = None):
+        """Marks the active session as finished and increments books_read for all is_reading members."""
+        await interaction.response.defer(ephemeral=True)
+        target_channel = channel or interaction.channel
+        channel_id = str(target_channel.id)
+        guild_id = str(interaction.guild_id)
+
+        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        if not club_data or not club_data.get("active_session"):
+            await send_ephemeral(interaction, "❌ No active session found in that channel.")
+            return
+        if not _can_manage_clubs(interaction, club_data):
+            await send_ephemeral(interaction,
+                "❌ You need to be a club admin or owner to use this command.",
+                ephemeral=True
+            )
+            return
+
+        active_session = club_data["active_session"]
+        session_id = active_session["id"]
+        book_title = active_session.get("book", {}).get("title", "the current book")
+        reading_count = sum(1 for m in active_session.get("members", []) if m.get("is_reading", True))
+
+        confirmed = await _confirm(
+            interaction,
+            f"⚠️ Finish **{book_title}**? {reading_count} member(s) will receive credit. "
+            "Click **Confirm** to proceed or **Cancel** to abort."
+        )
+        if not confirmed:
+            embed = create_embed(
+                title="❌ Action Cancelled",
+                description="No changes were made.",
+                color_key="error"
+            )
+            await send_ephemeral(interaction, embed=embed)
+            return
+
+        try:
+            result = bot.api.finish_session(session_id)
+            members_credited = result.get("members_credited", 0)
+            embed = create_embed(
+                title="✅ Session Finished",
+                description=f"**{book_title}** has been marked as finished. {members_credited} member(s) received credit for reading.",
+                color_key="success"
+            )
+            await send_ephemeral(interaction, embed=embed)
+        except APIError as e:
+            err = str(e)
+            if "already finished" in err.lower():
+                await send_ephemeral(interaction, "❌ This session is already finished.")
+            else:
+                await send_ephemeral(interaction, f"❌ Failed to finish session: {e}")
+
     # ── Discussion commands (club admin+) ─────────────────────────────────────
 
     @bot.tree.command(name="discussion_add", description="Add a discussion to the active session")
