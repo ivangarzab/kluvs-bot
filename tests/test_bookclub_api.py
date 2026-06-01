@@ -556,6 +556,99 @@ class TestBookClubAPI(unittest.TestCase):
             params={"id": "session-1"}
         )
 
+    @patch('requests.put')
+    def test_finish_session_success(self, mock_put):
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "success": True,
+            "message": "Session finished",
+            "members_credited": 3,
+        }
+        mock_response.raise_for_status = Mock()
+        mock_put.return_value = mock_response
+
+        result = self.api.finish_session("session-1")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["members_credited"], 3)
+        mock_put.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/session",
+            headers=self.api.headers,
+            json={"id": "session-1", "finish": True},
+        )
+
+    @patch('requests.put')
+    def test_finish_session_already_finished(self, mock_put):
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.text = "Session is already finished"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "400 Client Error", response=mock_response
+        )
+        mock_put.return_value = mock_response
+
+        with self.assertRaises(ValidationError):
+            self.api.finish_session("session-1")
+
+    @patch('requests.put')
+    def test_finish_session_not_found(self, mock_put):
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error", response=mock_response
+        )
+        mock_put.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.finish_session("session-1")
+
+    @patch('requests.put')
+    def test_finish_session_auth_error(self, mock_put):
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.text = "Unauthorized"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "401 Client Error", response=mock_response
+        )
+        mock_put.return_value = mock_response
+
+        with self.assertRaises(AuthenticationError):
+            self.api.finish_session("session-1")
+
+    @patch('requests.put')
+    def test_update_session_members_success(self, mock_put):
+        mock_response = Mock()
+        mock_response.json.return_value = {"success": True, "message": "Members updated"}
+        mock_response.raise_for_status = Mock()
+        mock_put.return_value = mock_response
+
+        members = [
+            {"member_id": 1, "is_reading": True},
+            {"member_id": 2, "is_reading": False},
+        ]
+        result = self.api.update_session_members("session-1", members)
+
+        self.assertTrue(result["success"])
+        mock_put.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/session",
+            headers=self.api.headers,
+            json={"id": "session-1", "session_members": members},
+        )
+
+    @patch('requests.put')
+    def test_update_session_members_not_found(self, mock_put):
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error", response=mock_response
+        )
+        mock_put.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.update_session_members("session-1", [])
+
     # Error handling tests
     @patch('requests.get')
     def test_resource_not_found_error(self, mock_get):
