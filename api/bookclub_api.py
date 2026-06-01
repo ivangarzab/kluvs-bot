@@ -778,13 +778,13 @@ class BookClubAPI:
     def delete_session(self, session_id: str) -> Dict:
         """
         Delete a session.
-        
+
         Args:
             session_id: The ID of the session to delete
-            
+
         Returns:
             Dict containing success status and message
-            
+
         Raises:
             ResourceNotFoundError: If the session doesn't exist
             AuthenticationError: If there's an authentication issue
@@ -792,9 +792,61 @@ class BookClubAPI:
         """
         url = f"{self.functions_url}/session"
         params = {"id": session_id}
-        
+
         try:
             response = requests.delete(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "session", session_id)
+
+    def finish_session(self, session_id: str) -> Dict:
+        """
+        Finish a reading session and credit all is_reading members.
+
+        Args:
+            session_id: The UUID of the session to finish.
+
+        Returns:
+            Dict with success, message, and members_credited fields.
+
+        Raises:
+            ValidationError: If the session is already finished.
+            ResourceNotFoundError: If the session doesn't exist.
+            AuthenticationError: If there's an authentication issue.
+            APIError: For other API errors.
+        """
+        url = f"{self.functions_url}/session"
+        data = {"id": session_id, "finish": True}
+
+        try:
+            response = requests.put(url, headers=self.headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "session", session_id)
+
+    def update_session_members(self, session_id: str, members: list) -> Dict:
+        """
+        Update participation flags for session members.
+
+        Args:
+            session_id: The UUID of the session.
+            members: List of dicts with member_id (int) and is_reading (bool).
+
+        Returns:
+            Dict with success and message fields.
+
+        Raises:
+            ResourceNotFoundError: If the session doesn't exist.
+            AuthenticationError: If there's an authentication issue.
+            APIError: For other API errors.
+        """
+        url = f"{self.functions_url}/session"
+        data = {"id": session_id, "session_members": members}
+
+        try:
+            response = requests.put(url, headers=self.headers, json=data)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
