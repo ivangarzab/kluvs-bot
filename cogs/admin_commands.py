@@ -1033,9 +1033,10 @@ def setup_admin_commands(bot):
         channel_id = str(target_channel.id)
         guild_id = str(interaction.guild_id)
 
-        club_data = bot.api.find_club_in_channel(channel_id, guild_id)
-        if not club_data or not club_data.get("active_session"):
-            await send_ephemeral(interaction, "❌ No active session found in that channel.")
+        try:
+            club_data = bot.api.find_club_in_channel(channel_id, guild_id)
+        except APIError as e:
+            await send_ephemeral(interaction, f"❌ Failed to look up club: {e}")
             return
         if not _can_manage_clubs(interaction, club_data):
             await send_ephemeral(interaction,
@@ -1043,11 +1044,14 @@ def setup_admin_commands(bot):
                 ephemeral=True
             )
             return
+        if not club_data or not club_data.get("active_session"):
+            await send_ephemeral(interaction, "❌ No active session found in that channel.")
+            return
 
         active_session = club_data["active_session"]
         session_id = active_session["id"]
         book_title = active_session.get("book", {}).get("title", "the current book")
-        reading_count = sum(1 for m in active_session.get("members", []) if m.get("is_reading", True))
+        reading_count = sum(1 for m in active_session.get("members", []) if m.get("is_reading", False))
 
         confirmed = await _confirm(
             interaction,
