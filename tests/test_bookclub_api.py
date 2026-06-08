@@ -1189,6 +1189,91 @@ class TestBookClubAPI(unittest.TestCase):
         self.assertEqual(call_args['page_count'], 255)
         self.assertEqual(call_args['image_url'], "https://example.com/foundation.jpg")
 
+    @patch('requests.post')
+    def test_create_discussion(self, mock_post):
+        """Test create_discussion with valid data."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": "discussion-new",
+            "session_id": "session-1",
+            "title": "Chapters 1-3",
+            "date": "2025-05-01",
+            "time": "18:00:00",
+            "location": "Library"
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        discussion_data = {
+            "session_id": "session-1",
+            "title": "Chapters 1-3",
+            "date": "2025-05-01",
+            "time": "18:00:00",
+            "location": "Library"
+        }
+
+        result = self.api.create_discussion(discussion_data)
+
+        self.assertEqual(result["id"], "discussion-new")
+        self.assertEqual(result["title"], "Chapters 1-3")
+        mock_post.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/discussion",
+            headers=self.api.headers,
+            json=discussion_data
+        )
+
+    @patch('requests.post')
+    def test_create_discussion_session_not_found(self, mock_post):
+        """Test create_discussion when the parent session doesn't exist."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Session not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error", response=mock_response
+        )
+        mock_post.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.create_discussion({"session_id": "missing-session", "title": "Chapters 1-3", "date": "2025-05-01"})
+
+    @patch('requests.put')
+    def test_update_discussion(self, mock_put):
+        """Test update_discussion with valid data."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "id": "discussion-123",
+            "title": "Updated Discussion",
+            "date": "2025-05-10",
+            "location": "Online"
+        }
+        mock_response.raise_for_status = Mock()
+        mock_put.return_value = mock_response
+
+        update_data = {"title": "Updated Discussion", "date": "2025-05-10", "location": "Online"}
+
+        result = self.api.update_discussion("discussion-123", update_data)
+
+        self.assertEqual(result["title"], "Updated Discussion")
+        mock_put.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/discussion",
+            headers=self.api.headers,
+            json={"id": "discussion-123", **update_data}
+        )
+
+    @patch('requests.put')
+    def test_update_discussion_not_found(self, mock_put):
+        """Test update_discussion when the discussion doesn't exist."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Discussion not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error", response=mock_response
+        )
+        mock_put.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.update_discussion("missing-discussion", {"title": "New Title"})
+
     @patch('requests.delete')
     def test_delete_discussion_success(self, mock_delete):
         """Test delete_discussion with valid ID."""
@@ -1200,7 +1285,40 @@ class TestBookClubAPI(unittest.TestCase):
         result = self.api.delete_discussion("discussion-123")
 
         self.assertTrue(result["success"])
-        mock_delete.assert_called_once()
+        mock_delete.assert_called_once_with(
+            "http://test-url.supabase.co/functions/v1/discussion",
+            headers=self.api.headers,
+            params={"id": "discussion-123"}
+        )
+
+    @patch('requests.delete')
+    def test_delete_discussion_empty_response_body(self, mock_delete):
+        """Test delete_discussion when the API returns a 204 with no body."""
+        mock_response = Mock()
+        mock_response.status_code = 204
+        mock_response.content = b""
+        mock_response.raise_for_status = Mock()
+        mock_delete.return_value = mock_response
+
+        result = self.api.delete_discussion("discussion-123")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["message"], "Discussion deleted successfully")
+        mock_response.json.assert_not_called()
+
+    @patch('requests.delete')
+    def test_delete_discussion_not_found(self, mock_delete):
+        """Test delete_discussion when the discussion doesn't exist."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Discussion not found"
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error", response=mock_response
+        )
+        mock_delete.return_value = mock_response
+
+        with self.assertRaises(ResourceNotFoundError):
+            self.api.delete_discussion("missing-discussion")
 
     @patch('requests.post')
     def test_create_club_connection_error(self, mock_post):
