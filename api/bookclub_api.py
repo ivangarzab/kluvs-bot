@@ -750,6 +750,73 @@ class BookClubAPI:
             title, author, external_google_id, edition, year, isbn, page_count, image_url
         )
 
+    def create_discussion(self, discussion_data: Dict) -> Dict:
+        """
+        Create a new discussion for a session.
+
+        Args:
+            discussion_data: Dict containing discussion data
+                Example:
+                {
+                    "session_id": "session-id-1",
+                    "title": "Chapters 1-3",
+                    "date": "2023-11-15",
+                    "time": "18:00:00",  # Optional
+                    "location": "Library"  # Optional
+                }
+
+        Returns:
+            Dict containing the created discussion (including server-generated id)
+
+        Raises:
+            ValidationError: If the discussion data is invalid
+            ResourceNotFoundError: If the session doesn't exist
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/discussion"
+
+        try:
+            response = requests.post(url, headers=self.headers, json=discussion_data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "discussion")
+
+    def update_discussion(self, discussion_id: str, update_data: Dict) -> Dict:
+        """
+        Update a discussion's details.
+
+        Args:
+            discussion_id: The ID of the discussion to update
+            update_data: Dict containing fields to update
+                Example:
+                {
+                    "title": "Updated Discussion",  # Optional
+                    "date": "2023-11-20",  # Optional
+                    "time": "18:00:00",  # Optional
+                    "location": "Library"  # Optional
+                }
+
+        Returns:
+            Dict containing the updated discussion
+
+        Raises:
+            ResourceNotFoundError: If the discussion doesn't exist
+            ValidationError: If the discussion data is invalid
+            AuthenticationError: If there's an authentication issue
+            APIError: For other API errors
+        """
+        url = f"{self.functions_url}/discussion"
+        data = {"id": discussion_id, **update_data}
+
+        try:
+            response = requests.put(url, headers=self.headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self._handle_request_error(e, "discussion", discussion_id)
+
     def delete_discussion(self, discussion_id: str) -> Dict:
         """
         Delete a specific discussion by ID.
@@ -771,6 +838,8 @@ class BookClubAPI:
         try:
             response = requests.delete(url, headers=self.headers, params=params)
             response.raise_for_status()
+            if response.status_code == 204 or not response.content:
+                return {"success": True, "message": "Discussion deleted successfully"}
             return response.json()
         except requests.exceptions.RequestException as e:
             self._handle_request_error(e, "discussion", discussion_id)
