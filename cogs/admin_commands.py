@@ -1152,24 +1152,12 @@ def setup_admin_commands(bot):
         new_discussion = {"title": title.strip(), "date": date.strip(), "time": f"{time.strip()}:00", "location": resolved_location}
 
         try:
-            bot.api.update_session(session_id, {"discussions": [new_discussion]})
+            created_discussion = bot.api.create_discussion({"session_id": session_id, **new_discussion})
         except APIError as e:
             await send_ephemeral(interaction,f"❌ Failed to add discussion: {e}")
             return
 
-        # Retrieve the server-assigned discussion ID so we can embed it in the event.
-        disc_id = None
-        try:
-            session = bot.api.get_session(session_id)
-            match = next(
-                (d for d in session.get("discussions", [])
-                 if d.get("title") == new_discussion["title"] and d.get("date") == new_discussion["date"]),
-                None
-            )
-            if match:
-                disc_id = match["id"]
-        except APIError:
-            pass  # Non-fatal — event will be created without an embedded ID
+        disc_id = created_discussion.get("id")
 
         # Build timezone-aware datetimes for the Discord event (explicitly UTC)
         start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
@@ -1278,7 +1266,7 @@ def setup_admin_commands(bot):
             updated["location"] = resolved_location
 
         try:
-            bot.api.update_session(session_id, {"discussions": [updated]})
+            bot.api.update_discussion(discussion_id, {k: v for k, v in updated.items() if k != "id"})
             description = f"Updated **{updated['title']}** on {updated['date']}"
             if updated.get("location"):
                 description += f" at {updated['location']}"
@@ -1335,9 +1323,8 @@ def setup_admin_commands(bot):
             await send_ephemeral(interaction,embed=embed)
             return
 
-        session_id = club_data["active_session"]["id"]
         try:
-            bot.api.update_session(session_id, {"discussion_ids_to_delete": [discussion_id]})
+            bot.api.delete_discussion(discussion_id)
             embed = create_embed(
                 title="✅ Discussion Deleted",
                 description="The discussion has been removed from the session.",
