@@ -1,7 +1,13 @@
 """
-Helpers for converting stored ISO 8601 timestamps into user-facing formats.
+Helpers for converting between user-supplied date/time strings and the
+ISO 8601 scheduled_at timestamps stored by the API.
 """
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def parse_scheduled_at(date_str: str, time_str: str) -> str:
+    """Combines a 'YYYY-MM-DD' date and 'HH:MM' time into a UTC scheduled_at ISO string."""
+    return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).isoformat()
 
 
 def to_discord_timestamp(iso_str: str, style: str = "F") -> str:

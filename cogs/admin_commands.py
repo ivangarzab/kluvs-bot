@@ -3,13 +3,13 @@ Admin commands (version, server, club, member, session management)
 """
 import re
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
-from utils.datetime_helpers import to_discord_timestamp, format_human_readable
+from utils.datetime_helpers import to_discord_timestamp, format_human_readable, parse_scheduled_at
 from api.bookclub_api import APIError, ResourceNotFoundError
 
 # Marker embedded in Discord event descriptions so discussion_sync can match them.
@@ -1152,7 +1152,7 @@ def setup_admin_commands(bot):
 
         session_id = club_data["active_session"]["id"]
         resolved_location = location.strip() if location and location.strip() else "Discord"
-        scheduled_at = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).isoformat()
+        scheduled_at = parse_scheduled_at(date, time)
         new_discussion = {"title": title.strip(), "scheduled_at": scheduled_at, "location": resolved_location}
 
         try:
@@ -1164,7 +1164,7 @@ def setup_admin_commands(bot):
         disc_id = created_discussion.get("id")
 
         # Build timezone-aware datetimes for the Discord event (explicitly UTC)
-        start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        start_dt = datetime.fromisoformat(scheduled_at)
         end_dt = start_dt + timedelta(hours=duration)
 
         event_description = f"Book club discussion: {title.strip()}"
@@ -1276,7 +1276,7 @@ def setup_admin_commands(bot):
             current_dt = datetime.fromisoformat(current["scheduled_at"])
             new_date = date.strip() if date else current_dt.strftime("%Y-%m-%d")
             new_time = time.strip() if time else current_dt.strftime("%H:%M")
-            scheduled_at = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).isoformat()
+            scheduled_at = parse_scheduled_at(new_date, new_time)
         else:
             scheduled_at = current["scheduled_at"]
 
