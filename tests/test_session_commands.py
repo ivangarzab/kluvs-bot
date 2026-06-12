@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from cogs.session_commands import setup_session_commands
 from api.bookclub_api import ResourceNotFoundError
+from utils.datetime_helpers import to_discord_timestamp
 
 
 class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
@@ -35,13 +36,13 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
                 'discussions': [
                     {
                         'id': 'discussion-1',
-                        'date': '2025-04-15',
+                        'scheduled_at': '2025-04-15T18:00:00+00:00',
                         'title': 'First Discussion',
                         'location': 'Room 101'
                     },
                     {
                         'id': 'discussion-2',
-                        'date': '2025-04-20',
+                        'scheduled_at': '2025-04-20T18:00:00+00:00',
                         'title': 'Second Discussion',
                         'location': 'Room 202'
                     }
@@ -245,8 +246,11 @@ class TestSessionCommands(unittest.IsolatedAsyncioTestCase):
         # Verify defer was called
         interaction.response.defer.assert_called_once()
 
-        # Verify followup.send was called
+        # Verify followup.send was called with an embed reflecting scheduled_at
         interaction.followup.send.assert_called_once()
+        embed = interaction.followup.send.call_args.kwargs["embed"]
+        self.assertIn(to_discord_timestamp("2025-04-15T18:00:00+00:00"), embed.fields[0].value)
+        self.assertIn(to_discord_timestamp("2025-04-20T18:00:00+00:00"), embed.fields[1].value)
 
     async def test_discussions_command_no_discussions(self):
         """Test the discussions command when no discussions exist"""

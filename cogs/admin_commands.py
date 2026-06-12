@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 
 from utils.embeds import create_embed
+from utils.datetime_helpers import to_discord_timestamp, format_human_readable
 from api.bookclub_api import APIError, ResourceNotFoundError
 
 # Marker embedded in Discord event descriptions so discussion_sync can match them.
@@ -28,7 +29,9 @@ async def discussion_autocomplete(interaction: discord.Interaction, current: str
         discussions = session.get("discussions", [])
         choices = []
         for d in discussions:
-            label = f"{d.get('title', 'Untitled')} — {d.get('date', '')}"
+            scheduled_at = d.get("scheduled_at", "")
+            when = format_human_readable(scheduled_at) if scheduled_at else ""
+            label = f"{d.get('title', 'Untitled')} — {when}"
             if not current or current.lower() in label.lower():
                 choices.append(app_commands.Choice(name=label[:100], value=d["id"]))
         return choices[:25]
@@ -1149,7 +1152,8 @@ def setup_admin_commands(bot):
 
         session_id = club_data["active_session"]["id"]
         resolved_location = location.strip() if location and location.strip() else "Discord"
-        new_discussion = {"title": title.strip(), "date": date.strip(), "time": f"{time.strip()}:00", "location": resolved_location}
+        scheduled_at = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).isoformat()
+        new_discussion = {"title": title.strip(), "scheduled_at": scheduled_at, "location": resolved_location}
 
         try:
             created_discussion = bot.api.create_discussion({"session_id": session_id, **new_discussion})
@@ -1199,6 +1203,7 @@ def setup_admin_commands(bot):
         discussion_id="The discussion to update (select from autocomplete)",
         title="New title",
         date="New date (YYYY-MM-DD)",
+        time="New start time in 24h format (HH:MM, e.g. 18:00)",
         location="New location",
         channel="The channel containing the club (defaults to current channel)"
     )
@@ -1207,6 +1212,7 @@ def setup_admin_commands(bot):
         discussion_id: str,
         title: str = None,
         date: str = None,
+        time: str = None,
         location: str = None,
         channel: discord.TextChannel = None
     ):
@@ -1227,9 +1233,9 @@ def setup_admin_commands(bot):
             await send_ephemeral(interaction,"❌ No active session found in that channel.")
             return
 
-        if not any([title, date, location]):
+        if not any([title, date, time, location]):
             await send_ephemeral(interaction,
-                "❌ Provide at least one field to update (title, date, or location)."
+                "❌ Provide at least one field to update (title, date, time, or location)."
             )
             return
 
@@ -1239,6 +1245,16 @@ def setup_admin_commands(bot):
             except ValueError:
                 await send_ephemeral(interaction,
                     "❌ Date must be in **YYYY-MM-DD** format (e.g., `2026-05-15`).",
+                    ephemeral=True
+                )
+                return
+
+        if time:
+            try:
+                datetime.strptime(time, "%H:%M")
+            except ValueError:
+                await send_ephemeral(interaction,
+                    "❌ Time must be in **HH:MM** 24h format (e.g., `18:00`).",
                     ephemeral=True
                 )
                 return
@@ -1256,10 +1272,18 @@ def setup_admin_commands(bot):
             await send_ephemeral(interaction,"❌ Discussion not found in the active session.")
             return
 
+        if date or time:
+            current_dt = datetime.fromisoformat(current["scheduled_at"])
+            new_date = date.strip() if date else current_dt.strftime("%Y-%m-%d")
+            new_time = time.strip() if time else current_dt.strftime("%H:%M")
+            scheduled_at = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).isoformat()
+        else:
+            scheduled_at = current["scheduled_at"]
+
         updated = {
             "id": discussion_id,
             "title": title.strip() if title else current["title"],
-            "date": date.strip() if date else current["date"],
+            "scheduled_at": scheduled_at,
         }
         resolved_location = location.strip() if location else current.get("location")
         if resolved_location:
@@ -1267,7 +1291,7 @@ def setup_admin_commands(bot):
 
         try:
             bot.api.update_discussion(discussion_id, {k: v for k, v in updated.items() if k != "id"})
-            description = f"Updated **{updated['title']}** on {updated['date']}"
+            description = f"Updated **{updated['title']}** scheduled for {to_discord_timestamp(updated['scheduled_at'])}"
             if updated.get("location"):
                 description += f" at {updated['location']}"
             embed = create_embed(
@@ -1338,13 +1362,11 @@ def setup_admin_commands(bot):
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
     @app_commands.describe(
-        default_time="Start time for created events in HH:MM 24h format (default: 18:00)",
         default_duration="Duration in hours for created events (default: 1.0)",
         channel="The channel containing the club (defaults to current channel)"
     )
     async def discussion_sync(
         interaction: discord.Interaction,
-        default_time: str = "18:00",
         default_duration: float = 1.0,
         channel: discord.TextChannel = None
     ):
@@ -1363,15 +1385,6 @@ def setup_admin_commands(bot):
             return
         if not club_data or not club_data.get("active_session"):
             await send_ephemeral(interaction,"❌ No active session found in that channel.")
-            return
-
-        try:
-            datetime.strptime(default_time, "%H:%M")
-        except ValueError:
-            await send_ephemeral(interaction,
-                "❌ default_time must be in **HH:MM** 24h format (e.g., `18:00`).",
-                ephemeral=True
-            )
             return
 
         if default_duration <= 0:
@@ -1418,12 +1431,12 @@ def setup_admin_commands(bot):
                 skipped.append(disc_title)
                 continue
 
-            # Parse the date; skip gracefully if it's not in the expected format.
-            raw_date = disc.get("date", "")
+            # Parse scheduled_at; skip gracefully if it's not in the expected format.
+            raw_scheduled_at = disc.get("scheduled_at", "")
             try:
-                start_dt = datetime.strptime(f"{raw_date} {default_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+                start_dt = datetime.fromisoformat(raw_scheduled_at)
             except ValueError:
-                failed.append(f"{disc_title} (unparseable date: {raw_date!r})")
+                failed.append(f"{disc_title} (unparseable scheduled_at: {raw_scheduled_at!r})")
                 continue
 
             end_dt = start_dt + timedelta(hours=default_duration)

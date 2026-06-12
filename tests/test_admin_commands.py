@@ -1479,8 +1479,8 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         self.session_with_discussions = {
             "id": "sess-1",
             "discussions": [
-                {"id": "disc-1", "title": "Chapters 1-5", "date": "2026-06-01", "location": "Discord"},
-                {"id": "disc-2", "title": "Chapters 6-10", "date": "2026-06-15"},
+                {"id": "disc-1", "title": "Chapters 1-5", "scheduled_at": "2026-06-01T18:00:00+00:00", "location": "Discord"},
+                {"id": "disc-2", "title": "Chapters 6-10", "scheduled_at": "2026-06-15T18:00:00+00:00"},
             ]
         }
 
@@ -1490,14 +1490,14 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.create_discussion.return_value = {
-            "id": "disc-new", "title": "Chapters 1-5", "date": "2026-06-01", "location": "Discord"
+            "id": "disc-new", "title": "Chapters 1-5", "scheduled_at": "2026-06-01T18:00:00+00:00", "location": "Discord"
         }
         interaction.guild.create_scheduled_event = AsyncMock()
         await self.commands["discussion_add"]["func"](
             interaction, title="Chapters 1-5", date="2026-06-01", time="18:00"
         )
         self.bot.api.create_discussion.assert_called_once_with(
-            {"session_id": "sess-1", "title": "Chapters 1-5", "date": "2026-06-01", "time": "18:00:00", "location": "Discord"}
+            {"session_id": "sess-1", "title": "Chapters 1-5", "scheduled_at": "2026-06-01T18:00:00+00:00", "location": "Discord"}
         )
         interaction.guild.create_scheduled_event.assert_called_once()
         call_kwargs = interaction.guild.create_scheduled_event.call_args.kwargs
@@ -1507,7 +1507,7 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
     async def test_discussion_add_embeds_id_in_event_description(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.create_discussion.return_value = {"id": "disc-abc", "title": "Intro", "date": "2026-06-01"}
+        self.bot.api.create_discussion.return_value = {"id": "disc-abc", "title": "Intro", "scheduled_at": "2026-06-01T18:00:00+00:00"}
         interaction.guild.create_scheduled_event = AsyncMock()
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="18:00"
@@ -1518,7 +1518,7 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
     async def test_discussion_add_event_created_without_id_when_response_lacks_id(self):
         interaction = _make_interaction(user_id="111")
         self.bot.api.find_club_in_channel.return_value = self.club
-        self.bot.api.create_discussion.return_value = {"title": "Intro", "date": "2026-06-01"}
+        self.bot.api.create_discussion.return_value = {"title": "Intro", "scheduled_at": "2026-06-01T18:00:00+00:00"}
         interaction.guild.create_scheduled_event = AsyncMock()
         await self.commands["discussion_add"]["func"](
             interaction, title="Intro", date="2026-06-01", time="18:00"
@@ -1537,7 +1537,7 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
             interaction, title="Intro", date="2026-06-01", time="19:00", location="Library"
         )
         self.bot.api.create_discussion.assert_called_once_with(
-            {"session_id": "sess-1", "title": "Intro", "date": "2026-06-01", "time": "19:00:00", "location": "Library"}
+            {"session_id": "sess-1", "title": "Intro", "scheduled_at": "2026-06-01T19:00:00+00:00", "location": "Library"}
         )
         call_kwargs = interaction.guild.create_scheduled_event.call_args.kwargs
         self.assertEqual(call_kwargs["location"], "Library")
@@ -1675,9 +1675,34 @@ class TestDiscussionCommands(unittest.IsolatedAsyncioTestCase):
         )
         self.bot.api.update_discussion.assert_called_once_with(
             "disc-1",
-            {"title": "Updated Title", "date": "2026-06-01", "location": "Discord"}
+            {"title": "Updated Title", "scheduled_at": "2026-06-01T18:00:00+00:00", "location": "Discord"}
         )
         self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+
+    async def test_discussion_update_date_and_time(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = self.club
+        self.bot.api.get_session.return_value = self.session_with_discussions
+        self.bot.api.update_discussion.return_value = {"success": True}
+        await self.commands["discussion_update"]["func"](
+            interaction, discussion_id="disc-1", date="2026-07-04", time="20:30"
+        )
+        self.bot.api.update_discussion.assert_called_once_with(
+            "disc-1",
+            {"title": "Chapters 1-5", "scheduled_at": "2026-07-04T20:30:00+00:00", "location": "Discord"}
+        )
+
+    async def test_discussion_update_invalid_time(self):
+        interaction = _make_interaction(user_id="111")
+        self.bot.api.find_club_in_channel.return_value = self.club
+        await self.commands["discussion_update"]["func"](
+            interaction, discussion_id="disc-1", time="8pm"
+        )
+        if interaction.followup.send.call_args.args:
+            self.assertIn("❌", interaction.followup.send.call_args.args[0])
+        else:
+            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        self.bot.api.update_discussion.assert_not_called()
 
     async def test_discussion_update_no_args(self):
         interaction = _make_interaction(user_id="111")
@@ -1836,8 +1861,8 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
         self.bot, self.commands = _make_bot()
         self.club = _club_with_admin("111")
         self.discussions = [
-            {"id": "disc-1", "title": "Chapters 1-5", "date": "2026-06-01", "location": "Discord"},
-            {"id": "disc-2", "title": "Chapters 6-10", "date": "2026-06-15"},
+            {"id": "disc-1", "title": "Chapters 1-5", "scheduled_at": "2026-06-01T18:00:00+00:00", "location": "Discord"},
+            {"id": "disc-2", "title": "Chapters 6-10", "scheduled_at": "2026-06-15T18:00:00+00:00"},
         ]
 
     def _make_event(self, description=""):
@@ -1896,7 +1921,7 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
 
     async def test_sync_skips_discussions_with_unparseable_date(self):
         interaction = _make_interaction(user_id="111")
-        bad_discussion = {"id": "disc-bad", "title": "Bad Date", "date": "sometime in June"}
+        bad_discussion = {"id": "disc-bad", "title": "Bad Date", "scheduled_at": "sometime in June"}
         self.bot.api.find_club_in_channel.return_value = self.club
         self.bot.api.get_session.return_value = {"discussions": [bad_discussion]}
         interaction.guild.fetch_scheduled_events = AsyncMock(return_value=[])
@@ -1929,16 +1954,6 @@ class TestDiscussionSync(unittest.IsolatedAsyncioTestCase):
         club_no_session["active_session"] = None
         self.bot.api.find_club_in_channel.return_value = club_no_session
         await self.commands["discussion_sync"]["func"](interaction)
-        # Check for error in either positional or keyword arguments
-        if interaction.followup.send.call_args.args:
-            self.assertIn("❌", interaction.followup.send.call_args.args[0])
-        else:
-            self.assertIn("embed", interaction.followup.send.call_args.kwargs)
-
-    async def test_sync_invalid_default_time(self):
-        interaction = _make_interaction(user_id="111")
-        self.bot.api.find_club_in_channel.return_value = self.club
-        await self.commands["discussion_sync"]["func"](interaction, default_time="6pm")
         # Check for error in either positional or keyword arguments
         if interaction.followup.send.call_args.args:
             self.assertIn("❌", interaction.followup.send.call_args.args[0])
@@ -1994,8 +2009,8 @@ class TestDiscussionAutocomplete(unittest.IsolatedAsyncioTestCase):
         }
         interaction.client.api.get_session.return_value = {
             "discussions": [
-                {"id": "disc-1", "title": "Chapters 1-5", "date": "2026-06-01"},
-                {"id": "disc-2", "title": "Chapters 6-10", "date": "2026-06-15"},
+                {"id": "disc-1", "title": "Chapters 1-5", "scheduled_at": "2026-06-01T18:00:00+00:00"},
+                {"id": "disc-2", "title": "Chapters 6-10", "scheduled_at": "2026-06-15T18:00:00+00:00"},
             ]
         }
 
@@ -2016,8 +2031,8 @@ class TestDiscussionAutocomplete(unittest.IsolatedAsyncioTestCase):
         }
         interaction.client.api.get_session.return_value = {
             "discussions": [
-                {"id": "disc-1", "title": "Chapters 1-5", "date": "2026-06-01"},
-                {"id": "disc-2", "title": "Final meeting", "date": "2026-07-01"},
+                {"id": "disc-1", "title": "Chapters 1-5", "scheduled_at": "2026-06-01T18:00:00+00:00"},
+                {"id": "disc-2", "title": "Final meeting", "scheduled_at": "2026-07-01T18:00:00+00:00"},
             ]
         }
 
