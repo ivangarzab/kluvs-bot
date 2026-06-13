@@ -440,7 +440,7 @@ class TestBookClubAPI(unittest.TestCase):
             "club": {"id": "club-1", "name": "Test Club"},
             "book": {"id": 1, "title": "Test Book", "author": "Test Author"},
             "due_date": "2025-04-15",
-            "discussions": [{"id": "disc-1", "title": "Chapter 1-3", "date": "2025-04-01"}],
+            "discussions": [{"id": "disc-1", "title": "Chapter 1-3", "scheduled_at": "2025-04-01T18:00:00+00:00"}],
             "shame_list": []
         }
         mock_response.raise_for_status = Mock()
@@ -481,7 +481,7 @@ class TestBookClubAPI(unittest.TestCase):
             "book": {"title": "New Book", "author": "Author Name"},
             "due_date": "2025-05-15",
             "discussions": [
-                {"title": "First Discussion", "date": "2025-05-01"}
+                {"title": "First Discussion", "scheduled_at": "2025-05-01T18:00:00+00:00"}
             ]
         }
         
@@ -1197,8 +1197,7 @@ class TestBookClubAPI(unittest.TestCase):
             "id": "discussion-new",
             "session_id": "session-1",
             "title": "Chapters 1-3",
-            "date": "2025-05-01",
-            "time": "18:00:00",
+            "scheduled_at": "2025-05-01T18:00:00+00:00",
             "location": "Library"
         }
         mock_response.raise_for_status = Mock()
@@ -1207,8 +1206,7 @@ class TestBookClubAPI(unittest.TestCase):
         discussion_data = {
             "session_id": "session-1",
             "title": "Chapters 1-3",
-            "date": "2025-05-01",
-            "time": "18:00:00",
+            "scheduled_at": "2025-05-01T18:00:00+00:00",
             "location": "Library"
         }
 
@@ -1234,7 +1232,7 @@ class TestBookClubAPI(unittest.TestCase):
         mock_post.return_value = mock_response
 
         with self.assertRaises(ResourceNotFoundError):
-            self.api.create_discussion({"session_id": "missing-session", "title": "Chapters 1-3", "date": "2025-05-01"})
+            self.api.create_discussion({"session_id": "missing-session", "title": "Chapters 1-3", "scheduled_at": "2025-05-01T18:00:00+00:00"})
 
     @patch('requests.put')
     def test_update_discussion(self, mock_put):
@@ -1243,13 +1241,13 @@ class TestBookClubAPI(unittest.TestCase):
         mock_response.json.return_value = {
             "id": "discussion-123",
             "title": "Updated Discussion",
-            "date": "2025-05-10",
+            "scheduled_at": "2025-05-10T18:00:00+00:00",
             "location": "Online"
         }
         mock_response.raise_for_status = Mock()
         mock_put.return_value = mock_response
 
-        update_data = {"title": "Updated Discussion", "date": "2025-05-10", "location": "Online"}
+        update_data = {"title": "Updated Discussion", "scheduled_at": "2025-05-10T18:00:00+00:00", "location": "Online"}
 
         result = self.api.update_discussion("discussion-123", update_data)
 

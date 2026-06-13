@@ -4,6 +4,8 @@ Session-related commands (book, due_date, session, discussions)
 import discord
 from discord import app_commands
 
+from utils.datetime_helpers import to_discord_timestamp
+
 from utils.embeds import create_embed
 from api.bookclub_api import ResourceNotFoundError
 
@@ -185,16 +187,17 @@ def setup_session_commands(bot):
             return
             
         discussions = session['discussions']
-        
-        # Sort discussions by date
-        discussions.sort(key=lambda x: x['date'])
-        
+
+        # Sort discussions by scheduled time
+        discussions.sort(key=lambda x: x['scheduled_at'])
+
         # Create fields for each discussion
         fields = []
         for i, discussion in enumerate(discussions):
+            formatted_when = to_discord_timestamp(discussion['scheduled_at'])
             fields.append({
                 "name": f"Discussion {i+1}: {discussion['title']}",
-                "value": f"**Date**: {discussion['date']}\n**Location**: {discussion.get('location', 'TBD')}",
+                "value": f"**When**: {formatted_when}\n**Location**: {discussion.get('location', 'TBD')}",
                 "inline": False
             })
         

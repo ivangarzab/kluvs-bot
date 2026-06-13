@@ -612,7 +612,7 @@ class BookClubAPI:
                     "discussions": [  # Optional
                         {
                             "title": "Chapters 1-3",
-                            "date": "2023-11-15",
+                            "scheduled_at": "2023-11-15T18:00:00+00:00",
                             "location": "Library"  # Optional
                         }
                     ]
@@ -656,12 +656,12 @@ class BookClubAPI:
                         {
                             "id": "existing-discussion-id",  # Include for existing discussions
                             "title": "Updated Discussion",
-                            "date": "2023-11-20",
+                            "scheduled_at": "2023-11-20T18:00:00+00:00",
                             "location": "Library"  # Optional
                         },
                         {
                             "title": "New Discussion",  # New discussion (no ID)
-                            "date": "2023-12-01",
+                            "scheduled_at": "2023-12-01T18:00:00+00:00",
                             "location": "Online"  # Optional
                         }
                     ],
@@ -760,8 +760,7 @@ class BookClubAPI:
                 {
                     "session_id": "session-id-1",
                     "title": "Chapters 1-3",
-                    "date": "2023-11-15",
-                    "time": "18:00:00",  # Optional
+                    "scheduled_at": "2023-11-15T18:00:00+00:00",
                     "location": "Library"  # Optional
                 }
 
@@ -793,8 +792,7 @@ class BookClubAPI:
                 Example:
                 {
                     "title": "Updated Discussion",  # Optional
-                    "date": "2023-11-20",  # Optional
-                    "time": "18:00:00",  # Optional
+                    "scheduled_at": "2023-11-20T18:00:00+00:00",  # Optional
                     "location": "Library"  # Optional
                 }
 
